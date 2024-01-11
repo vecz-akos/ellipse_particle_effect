@@ -1,2 +1,3 @@
 # ellipse_particle_effect
-Just experiment.
+
+An experiment to create ellipse shapes using simulated annealing.
