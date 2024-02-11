@@ -1,3 +1,7 @@
+import NEllipse from "./NEllipse.js";
+import Particle from "./Particle.js";
+import Point from "./Point.js";
+
 const canvas = document.querySelector('canvas'),
     ctx = canvas.getContext("2d")
 
@@ -7,39 +11,14 @@ let width = canvas.width = window.innerWidth,
     animate = true,
     clearCanvas = true;
 
-class Particle{
-    constructor(x=0, y=0) {
-        this.x = x
-        this.y = y
-    }
-
-    update(circle) {
-        //const d = Math.min(this.distance(circle)/Math.log10(this.distance(circle)+1) + this.distance({x:0, y:0, r:300})/Math.log10(this.distance(circle)+1))
-        //const d = Math.min(this.distance(circle)/8, this.distance({x:100, y:100, r:350})/8)
-        //const d = this.distance(circle)/8
-        const x = this.distance(circle)
-        const d = Math.sqrt(x+8)*3-7
-        const angle = Math.random()*Math.PI*2
-        this.x += d * Math.cos(angle)
-        this.y += d * Math.sin(angle)
-    }
-
-    distance(obj) {
-        return Math.abs(Math.sqrt(this.dummyDistance(obj)) - obj.r)
-    }
-
-    dummyDistance(obj=new Particle()) {
-		const dx = this.x - obj.x;
-		const dy = this.y - obj.y;
-		return dx * dx + dy * dy;
-    }
-}
-
 let circle = {
     x: Math.round(width/2),
     y: Math.round(height/2),
     r: Math.round(Math.min(width, height)*(1/3))
 }
+
+const nEllipse = new NEllipse(Math.round(Math.min(width, height)*(1/3)))
+nEllipse.addFocalPoint(new Point(Math.round(width/2), Math.round(height/2)))
 
 let particles = []
 
@@ -56,10 +35,9 @@ const init = () => {
 const update = () => {
     if (animate) {
         for (let p of particles) {
-            p.update(circle)
+            p.update(nEllipse)
         }
     }
-
     draw()
     frame = window.requestAnimationFrame(update)
 }
