@@ -9,7 +9,8 @@ let width = canvas.width = window.innerWidth,
     height = canvas.height = window.innerHeight,
     frame = 0,
     animate = true,
-    clearCanvas = true;
+    clearCanvas = true,
+    showFocalPoints = false;
 
 let circle = {
     x: Math.round(width/2),
@@ -55,6 +56,18 @@ const draw = () => {
         ctx.arc(p.x, p.y, .5, 0, Math.PI*2, true)
         ctx.fill()
     })
+
+    if (showFocalPoints) {
+        const crossSize = 5
+        nEllipse.focalPoints.forEach(point => {
+            ctx.beginPath()
+            ctx.moveTo(point.x, point.y - crossSize)
+            ctx.lineTo(point.x, point.y + crossSize)
+            ctx.moveTo(point.x - crossSize, point.y)
+            ctx.lineTo(point.x + crossSize, point.y)
+            ctx.stroke()
+        })
+    }
 }
 
 window.onload = () => {
@@ -68,6 +81,8 @@ window.onload = () => {
             case "c":
                 clearCanvas = !clearCanvas
                 break
+            case "s":
+                showFocalPoints = !showFocalPoints
             default:
                 break
         }
