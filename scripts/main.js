@@ -1,6 +1,7 @@
 import NEllipse from "./NEllipse.js";
 import Particle from "./Particle.js";
 import Point from "./Point.js";
+import MouseFollower from "./MouseFollower.js";
 
 const canvas = document.querySelector('canvas'),
     ctx = canvas.getContext("2d")
@@ -12,14 +13,10 @@ let width = canvas.width = window.innerWidth,
     clearCanvas = true,
     showFocalPoints = false;
 
-let circle = {
-    x: Math.round(width/2),
-    y: Math.round(height/2),
-    r: Math.round(Math.min(width, height)*(1/3))
-}
-
 const nEllipse = new NEllipse(Math.round(Math.min(width, height)*(1/3)))
-nEllipse.addFocalPoint(new Point(Math.round(width/2), Math.round(height/2)))
+nEllipse.addFocalPoint(new Point(Math.round(width/2), Math.round(height/2)), 0)
+
+const mf = new MouseFollower()
 
 let particles = []
 
@@ -34,11 +31,14 @@ const init = () => {
 }
 
 const update = () => {
+    let correctionCounter = 0
     if (animate) {
         for (let p of particles) {
             p.update(nEllipse)
+            correctionCounter += particleCorrection(p)
         }
     }
+    //console.log(correctionCounter)
     draw()
     frame = window.requestAnimationFrame(update)
 }
@@ -70,8 +70,30 @@ const draw = () => {
     }
 }
 
+const addFocalPoint = (x, y) => {
+    nEllipse.addFocalPoint(
+        new Point(x, y)
+    )
+}
+
+const particleCorrection = (particle) => {
+    let change = false;
+    const tolerance = 3
+    if (particle.x > tolerance*width || particle.x < -tolerance*width) {
+        change = true
+        particle.x = Math.random()*width
+    }
+    if (particle.y > tolerance*height || particle.x < -tolerance*height) {
+        change = true
+        particle.y = Math.random()*height
+    }
+    return change
+}
+
 window.onload = () => {
     init()
+    
+    mf.addMouseMoveEventListener()
 
     document.body.addEventListener("keydown", (event) => {
         switch (event.key) {
@@ -83,6 +105,13 @@ window.onload = () => {
                 break
             case "s":
                 showFocalPoints = !showFocalPoints
+                break
+            case "+":
+                addFocalPoint(mf.x, mf.y)
+                break
+            case "-":
+                nEllipse.removeFocalPoint()
+                break
             default:
                 break
         }
