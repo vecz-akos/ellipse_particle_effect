@@ -11,7 +11,8 @@ let width = canvas.width = window.innerWidth,
     frame = 0,
     animate = true,
     clearCanvas = true,
-    showFocalPoints = false;
+    showFocalPoints = false,
+    followFocalPoint = false;
 
 const nEllipse = new NEllipse(Math.round(Math.min(width, height)*(1/3)))
 nEllipse.addFocalPoint(new Point(Math.round(width/2), Math.round(height/2)), 0)
@@ -25,12 +26,18 @@ const init = () => {
     height = canvas.height = window.innerHeight
 
     particles = []
-    for (let i = 0; i < 8_000; i++) {
+    for (let i = 0; i < 10_000; i++) {
         particles.push(new Particle(Math.random()*width, Math.random()*height))
     }
 }
 
 const update = () => {
+    if (followFocalPoint) {
+        if (nEllipse.numberOfFocalPoints > 0) {
+            nEllipse.focalPoints[0].x = mf.x
+            nEllipse.focalPoints[0].y = mf.y
+        }
+    }
     let correctionCounter = 0
     if (animate) {
         for (let p of particles) {
@@ -49,7 +56,7 @@ const draw = () => {
         ctx.fillRect(0, 0, width, height)
     }
 
-    ctx.fillStyle = "#00000088"
+    ctx.fillStyle = "#00000055"
 
     particles.forEach((p) => {
         ctx.beginPath()
@@ -112,6 +119,8 @@ window.onload = () => {
             case "-":
                 nEllipse.removeFocalPoint()
                 break
+            case "f":
+                followFocalPoint = !followFocalPoint
             default:
                 break
         }

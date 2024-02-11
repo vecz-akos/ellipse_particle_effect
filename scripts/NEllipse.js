@@ -21,12 +21,13 @@ export default class NEllipse {
     }
 
     removeFocalPoint(index=0, d=null) {
-        if (this.numberOfFocalPoints > index && index >= 0)
+        if (this.numberOfFocalPoints > index && index >= 0 && this.numberOfFocalPoints > 0) {
             this.focalPoints.splice(index, 1)
-        if (d === null)
-            this.d -= this.unit_d
-        else
-            this.d -= d
+            if (d === null)
+                this.d -= this.unit_d
+            else
+                this.d -= d
+        }
     }
 
     calcDistance(point) {

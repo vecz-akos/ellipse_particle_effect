@@ -9,7 +9,7 @@ export default class Particle extends Point {
     update(nEllipse) {
         if (nEllipse instanceof NEllipse) {
             const x = nEllipse.calcDistance(this)
-            const d = Math.sqrt(x+8)*3-7
+            const d = Math.sqrt(x+128)*8-90
             const angle = Math.random()*Math.PI*2
             this.x += d * Math.cos(angle)
             this.y += d * Math.sin(angle)
