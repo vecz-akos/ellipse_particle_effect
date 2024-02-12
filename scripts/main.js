@@ -8,6 +8,8 @@ const canvas = document.querySelector('canvas'),
 
 let width = canvas.width = window.innerWidth,
     height = canvas.height = window.innerHeight,
+    backgroundColor = "#ffffff",
+    foregroundColor = "#000000",
     frame = 0,
     animate = true,
     clearCanvas = true,
@@ -51,20 +53,24 @@ const update = () => {
 }
 
 const draw = () => {
-    if (clearCanvas) {
-        ctx.fillStyle = "#fff"
-        ctx.fillRect(0, 0, width, height)
+    if (animate) {
+        if (clearCanvas) {
+            ctx.fillStyle = backgroundColor
+            ctx.fillRect(0, 0, width, height)
+        }
+
+        ctx.fillStyle = foregroundColor + "44" // colorcode + alpha
+        particles.forEach((p) => {
+            if (p.x > 0 && p.x < width && p.y > 0 && p.y < height) {
+                ctx.beginPath()
+                ctx.arc(p.x, p.y, .5, 0, Math.PI*2, true)
+                ctx.fill()
+            }
+        })
     }
 
-    ctx.fillStyle = "#00000055"
-
-    particles.forEach((p) => {
-        ctx.beginPath()
-        ctx.arc(p.x, p.y, .5, 0, Math.PI*2, true)
-        ctx.fill()
-    })
-
     if (showFocalPoints) {
+        ctx.strokeStyle = foregroundColor
         const crossSize = 5
         nEllipse.focalPoints.forEach(point => {
             ctx.beginPath()
@@ -127,10 +133,10 @@ window.onload = () => {
     })
 
     window.requestAnimationFrame(update)
-}
 
-onresize = (e) => {
-    window.cancelAnimationFrame(frame)
-    init()
-    window.requestAnimationFrame(update)
+    onresize = (e) => {
+        window.cancelAnimationFrame(frame)
+        init()
+        window.requestAnimationFrame(update)
+    }
 }

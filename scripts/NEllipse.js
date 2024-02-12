@@ -33,7 +33,7 @@ export default class NEllipse {
     calcDistance(point) {
         if (this.numberOfFocalPoints > 0)
             return Math.abs(this.focalPoints.reduce((sum, focal) => {
-                return sum += focal.distance(point)
+                return sum + focal.distance(point)
             }, 0) - this.d)
         // else empty
         return 0

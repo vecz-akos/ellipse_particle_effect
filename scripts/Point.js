@@ -8,7 +8,7 @@ export default class Point {
         return Math.abs(Math.sqrt(this.dummyDistance(obj)))
     }
 
-    dummyDistance(obj=new Particle()) {
+    dummyDistance(obj=new Point()) {
 		const dx = this.x - obj.x;
 		const dy = this.y - obj.y;
 		return dx * dx + dy * dy;
