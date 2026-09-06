@@ -73,7 +73,7 @@ const update = () => {
     if (animate) {
         for (let p of particles) {
             p.update(nEllipse, random)
-            correctionCounter += particleCorrection(p)
+            correctionCounter += particleCorrection(p, random)
         }
     }
     draw()
@@ -117,7 +117,7 @@ const addFocalPoint = (x, y) => {
     )
 }
 
-const particleCorrection = (particle) => {
+const particleCorrection = (particle, random) => {
     let change = false;
     const tolerance = 3
     if (particle.x > tolerance*width || particle.x < -tolerance*width) {

@@ -1,2 +1,6 @@
 node_modules/
 dist/
+
+# The live agent task queue is transient; docs/agent-message.template.md is the
+# tracked skeleton it is copied from.
+docs/agent-message.md

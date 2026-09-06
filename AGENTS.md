@@ -31,6 +31,7 @@ docs/                 architecture, the decision log, and the roadmap
 | Why something is the way it is; what was tried and broke | `docs/decisions.md` |
 | What a component is, what it owns, how pieces connect | `docs/architecture.md` |
 | Planned work, in dependency order | `docs/roadmap.md` |
+| A small follow-up task to hand to an agent | `docs/agent-message.md` (untracked; skeleton in `docs/agent-message.template.md`) |
 | How to run or build the project | `README.md` |
 | A rule an agent must not break | this file, in one or two sentences |
 

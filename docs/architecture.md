@@ -57,8 +57,11 @@ reallocates while copying the overlapping region so the accumulated image
 survives a window resize. `render` maps density to colour into an `ImageData` —
 `log1p(density * exposure)` normalised to a white point that lags the running
 maximum (so the per-frame mode does not flicker), then a gamma curve, then a
-lerp between the background and foreground colour. It knows nothing about
-particles or the canvas; `main.js` does the `putImageData`.
+lerp between the background and foreground colour. The curve is evaluated in
+`buildTable`, once per density value rather than once per pixel, and the pixel
+loop only indexes that table — which is also where Phase 4's colormap will go.
+It knows nothing about particles or the canvas; `main.js` does the
+`putImageData`.
 
 ### `scripts/main.js`
 

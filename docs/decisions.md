@@ -26,6 +26,42 @@ Paragraphs, tables, lists.
 
 ---
 
+# Density-to-colour lookup table
+
+Date: 2026-09-06
+
+`DensityBuffer.render` no longer computes the tone curve per pixel. Density is
+always an integer (`add` only ever does `+= 1`), so `buildTable` fills a
+`Uint32Array` indexed by density with packed RGBA, and the pixel loop is one
+array index plus one 32-bit store through a `Uint32Array` view of the
+`ImageData`. The curve is unchanged: `log1p(d * exposure)` normalised to the
+white point, `pow(t, 1/gamma)`, then a lerp between the colours.
+
+**Measured** (Node, the real modules, 1920×1080, 20 000 particles, two focal
+points, 30-run averages — not the browser, so read the ratios rather than the
+absolute numbers):
+
+| state | fill | particle loop | render, before | render, after |
+| --- | --- | --- | --- | --- |
+| early | 16% | 1.6 ms | 24.2 ms | 8.0 ms |
+| after 3000 frames | 59% | 1.6 ms | 46.1 ms | 12.5 ms |
+| after 10000 frames | 78% | 1.5 ms | 52.4 ms | 11.6 ms |
+
+Two things the measurement settled. The render loop was never close to the
+particle loop — it was **fifteen to thirty times more expensive** from the first
+frame, so the "dramatically faster" claim in the density-buffer entry was about
+dropping the per-particle canvas calls, not about the frame as a whole. And the
+cost still grows with fill, just from a much lower base: the remaining work is
+the per-pixel store, which the table cannot remove.
+
+Output is pixel-identical to the previous implementation — verified by rendering
+both into separate buffers at the same seed and comparing all 8.3 million
+channels, at three points in a run. `Math.round` in the table matches what
+`Uint8ClampedArray` did on assignment.
+
+**For Phase 4: this table is the colormap.** The black → orange → white grading
+of the reference images is a different `buildTable` body, not a new code path.
+
 # Seeded RNG
 
 Date: 2026-09-06
