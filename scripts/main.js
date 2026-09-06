@@ -56,6 +56,29 @@ const resizeCanvas = () => {
     return true
 }
 
+// The default weight of a focal point is a third of the shorter canvas side, so
+// it has to follow the canvas whenever the pixel size changes.
+const applyDefaultWeight = () => {
+    nEllipse.unit_d = Math.round(Math.min(width, height)/3)
+    nEllipse.baseD = nEllipse.unit_d
+    nEllipse.recalculateD()
+}
+
+// A deliberate resolution change takes the whole figure with it: the points keep
+// their place in the frame and their size relative to it. Only the panel path
+// does this — a window resize leaves the figure in place, along with the
+// density it belongs to. See AGENTS.md.
+const rescaleFocalPoints = (fromWidth, fromHeight) => {
+    const scaleX = width/fromWidth,
+        scaleY = height/fromHeight,
+        scaleWeight = Math.min(width, height)/Math.min(fromWidth, fromHeight)
+    for (const point of nEllipse.focalPoints) {
+        point.x *= scaleX
+        point.y *= scaleY
+        point.weight = Math.round(point.weight*scaleWeight)
+    }
+}
+
 const spawnParticles = () => {
     random.reset()
     particles = []
@@ -102,6 +125,10 @@ const update = () => {
 }
 
 const draw = () => {
+    // Accumulating mode is the old "record": mark it with a red frame, since
+    // nothing else on screen says the image is being kept.
+    canvas.classList.toggle("recording", !params.clearCanvas)
+
     if (params.animate) {
         if (params.clearCanvas) density.clear()
 
@@ -152,8 +179,15 @@ const particleCorrection = (particle, random) => {
     return change
 }
 
+// The visible canvas carries the focal-point crosses on top of the image, so
+// the export goes through an offscreen copy of the density render instead.
 const savePng = () => {
-    canvas.toBlob((blob) => {
+    const target = document.createElement("canvas")
+    target.width = width
+    target.height = height
+    target.getContext("2d").putImageData(imageData, 0, 0)
+
+    target.toBlob((blob) => {
         const link = document.createElement("a")
         link.href = URL.createObjectURL(blob)
         link.download = `n-ellipse-${random.seed}-${width}x${height}.png`
@@ -178,18 +212,21 @@ const pickFocalPoint = (x, y) => {
 
 window.onload = () => {
     resizeCanvas()
-
-    // The default target sum is a third of the shorter canvas side.
-    nEllipse.unit_d = Math.round(Math.min(width, height)/3)
-    nEllipse.baseD = nEllipse.unit_d
-    nEllipse.recalculateD()
+    applyDefaultWeight()
 
     panel = new Panel(params, nEllipse, {
+        // A new pixel size is a new image: the density is resolution-specific,
+        // so it is dropped here. A window resize keeps it — see AGENTS.md.
         canvasChanged: () => {
-            if (resizeCanvas()) {
-                density.clear()
-                spawnParticles()
-            }
+            const previousWidth = width,
+                previousHeight = height
+            if (!resizeCanvas()) return
+
+            rescaleFocalPoints(previousWidth, previousHeight)
+            applyDefaultWeight()
+            panel.syncFocalPoints()
+            density.clear()
+            spawnParticles()
         },
         countChanged: () => spawnParticles(),
         addFocalPoint: () => addFocalPoint(Math.round(width/2), Math.round(height/2)),
@@ -204,11 +241,7 @@ window.onload = () => {
     location.hash = encodeURIComponent(random.seed)
 
     // The panel changed the stage width, so the canvas may need a second pass.
-    if (resizeCanvas()) {
-        nEllipse.unit_d = Math.round(Math.min(width, height)/3)
-        nEllipse.baseD = nEllipse.unit_d
-        nEllipse.recalculateD()
-    }
+    if (resizeCanvas()) applyDefaultWeight()
 
     addFocalPoint(Math.round(width/2), Math.round(height/2), 0)
     spawnParticles()

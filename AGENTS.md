@@ -103,12 +103,27 @@ Rules for all of it:
   `removeEventListener` needs the same function reference — passing a fresh
   arrow function silently removes nothing. This was a real bug; do not inline it
   back.
-- Resizing the window (or changing aspect/resolution) reallocates every
-  particle; the accumulated density survives, because `DensityBuffer.resize`
-  copies the overlapping region and recomputes `max` over it.
+- **The two resize paths clear different things, on purpose.** Both reallocate
+  every particle. A *window* resize (`onresize`) keeps the accumulated density:
+  `DensityBuffer.resize` copies the overlapping region and recomputes `max` over
+  it, so nudging the window edge does not destroy a run that has been building
+  for minutes. Changing *aspect or resolution* from the panel (`canvasChanged`)
+  clears it, because that is a deliberate act of choosing a new pixel size and
+  the buffer's contents are resolution-specific — the step curve is tuned in
+  pixels, so old traces and new ones are drawn at different scales and blending
+  them just looks like a mistake. The same split governs the figure:
+  `canvasChanged` calls `rescaleFocalPoints` so the points keep their place in
+  the frame and their size relative to it, and `applyDefaultWeight` so newly
+  added points are sized for the canvas you are on; a window resize touches
+  neither, because the surviving density was drawn around the figure where it
+  stands.
 - The keyboard handler returns early when the event comes from inside `.panel`,
   so typing a seed does not toggle modes. After changing `Params` from a
   shortcut it calls `panel.sync()`, or the controls would show stale values.
+- `savePng` exports an offscreen canvas built from the last `imageData`, not the
+  visible one, because `draw` strokes the focal-point crosses onto the visible
+  canvas after the blit. Anything drawn on top of the image belongs there, not in
+  the export.
 - `correctionCounter` in `update` is accumulated and unused. It is a debug hook
   left in place deliberately; a linter will flag it.
 

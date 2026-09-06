@@ -58,7 +58,9 @@ can wander back, so a lower value collects them sooner and tightens the image;
 **Aspect and resolution are separate on purpose.** The simulation works in
 pixels, so the render resolution is part of the look: the same seed at 4K is a
 different image from the same seed at 1080p, not a bigger one. The panel shows
-the resulting pixel size under the dropdowns.
+the resulting pixel size under the dropdowns. Changing either one starts a new
+image, since the accumulated density belongs to the resolution it was drawn at;
+resizing the window keeps what has built up so far.
 
 ## Controls
 
@@ -75,7 +77,8 @@ Keyboard shortcuts stay the fast path, and the panel follows them.
 | `r` | roll a new seed and restart from an empty image |
 
 Turn clearing off with `c` and let it run: that is where the finished images
-come from. Regions the focal points stopped feeding fade back over time — the
+come from. The canvas gets a red frame while clearing is off, so it is obvious
+that the image is being kept rather than redrawn. Regions the focal points stopped feeding fade back over time — the
 tone map normalises to a white point that keeps rising with the densest area,
 so a long run behaves like an exposure with a slowly closing aperture.
 

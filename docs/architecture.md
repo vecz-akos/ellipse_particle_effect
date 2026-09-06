@@ -132,9 +132,12 @@ requestAnimationFrame
 ```
 
 A window resize, or an aspect/resolution change in the panel, recomputes the
-canvas size; if it actually changed, the density buffer is resized (keeping the
-overlapping region) and the particles are respawned from the seed. Nothing
-cancels the loop any more.
+canvas size; if it actually changed, the density buffer is resized and the
+particles are respawned from the seed. The two differ in what happens to the
+accumulated image: a window resize keeps it, since `resize` copies the
+overlapping region, while an aspect or resolution change clears it — the
+density is resolution-specific, and the panel path is a deliberate choice of a
+new pixel size. Nothing cancels the loop any more.
 
 ## What is absent today
 
