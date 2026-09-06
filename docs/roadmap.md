@@ -50,7 +50,13 @@ stop meaning what they mean today — they collapse into "reset the buffer" and
 
 ---
 
-## Phase 2 — Seeded RNG
+## Phase 2 — Seeded RNG — **done**
+
+Landed as `scripts/Random.js` (mulberry32, hand-written); see "Seeded RNG" in
+`docs/decisions.md`. The seed lives in the URL hash and `r` rolls a new one.
+Caveat for the phases below: the run is reproducible for a given **window
+size**, because `init` spawns particles from the stream. The original plan
+follows, for context.
 
 Currently `Math.random` everywhere, so **no image is reproducible**. That is the
 one thing a generative project cannot afford: a good render cannot be recovered,

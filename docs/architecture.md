@@ -42,6 +42,13 @@ velocity and no memory between frames.
 Caches the last `mousemove` position. Holds its bound listener in `handler` so
 `removeMouseMoveEventListener` can actually detach it.
 
+### `scripts/Random.js`
+
+The seeded PRNG — mulberry32 over an xmur3 hash of the seed string. `next`,
+`between` and `angle` are the whole surface; `reset` restarts the stream from
+the seed, which is how `init` makes a run replayable. `Random.randomSeed`
+produces a short base-36 seed and is the only `Math.random` left in the project.
+
 ### `scripts/DensityBuffer.js`
 
 The image. A `Float32Array` of `width * height` hit counts: `add(x, y)`
@@ -56,10 +63,11 @@ particles or the canvas; `main.js` does the `putImageData`.
 ### `scripts/main.js`
 
 The application. Owns the canvas and its 2D context, the density buffer and its
-`ImageData`, the particle array, the single `NEllipse` instance, all the toggle
-flags (`animate`, `clearCanvas`, `showFocalPoints`, `followFocalPoint`) and the
-tone-map parameters (`exposure`, `gamma`), the keyboard bindings, and the
-resize handler. `particleCorrection` recycles particles that have drifted
+`ImageData`, the single `Random` instance and the seed (read from and written to
+the URL hash by `applySeed`), the particle array, the single `NEllipse`
+instance, all the toggle flags (`animate`, `clearCanvas`, `showFocalPoints`,
+`followFocalPoint`) and the tone-map parameters (`exposure`, `gamma`), the
+keyboard bindings, and the resize handler. `particleCorrection` recycles particles that have drifted
 several screens away back to a random on-screen position.
 
 ### `index.html`
@@ -76,7 +84,7 @@ requestAnimationFrame
        ├─ followFocalPoint ? focalPoints[0] ← mouse position
        ├─ for each particle:
        │     error = nEllipse.calcDistance(particle)   ← NEllipse
-       │     particle steps by f(error) in a random direction   ← Particle
+       │     particle steps by f(error) in a seeded random direction ← Particle, Random
        │     particleCorrection(particle)              ← recycle if far off-screen
        └─ draw()
             ├─ clearCanvas ? density.clear()

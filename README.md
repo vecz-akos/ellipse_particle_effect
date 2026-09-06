@@ -15,6 +15,7 @@ mouse and add focal points to steer the shape.
 | `scripts/Particle.js` | a `Point` that steps according to its error |
 | `scripts/MouseFollower.js` | caches the cursor position |
 | `scripts/DensityBuffer.js` | per-pixel hit counts, and the tone map that turns them into an image |
+| `scripts/Random.js` | the seeded PRNG every random step comes from |
 | `scripts/main.js` | canvas, animation loop, keyboard controls |
 
 ## Quick start
@@ -38,11 +39,19 @@ plain ES modules and Canvas 2D.
 | `+` | add a focal point at the cursor |
 | `-` | remove the most recently added focal point |
 | `f` | make the newest focal point follow the mouse |
+| `r` | roll a new seed and restart from an empty image |
 
 Turn clearing off with `c` and let it run: that is where the finished images
 come from. Regions the focal points stopped feeding fade back over time — the
 tone map normalises to a white point that keeps rising with the densest area,
 so a long run behaves like an exposure with a slowly closing aperture.
+
+## Seeds
+
+The run is driven by a seeded PRNG, and the seed is in the URL hash — copy the
+link and you get the same image back. `r` rolls a new seed. Reproducibility
+holds for a given window size, and stops the moment you steer the shape with the
+mouse.
 
 ## Documentation
 

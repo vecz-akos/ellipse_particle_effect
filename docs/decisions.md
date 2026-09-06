@@ -26,6 +26,35 @@ Paragraphs, tables, lists.
 
 ---
 
+# Seeded RNG
+
+Date: 2026-09-06
+
+Roadmap Phase 2. `Math.random` is gone from the simulation: `Random`
+(mulberry32, seeded through an xmur3 string hash) is created once in `main.js`
+and passed to `Particle.update`; particle spawning and `particleCorrection` draw
+from the same instance. `init` calls `random.reset()`, so a run restarts the
+stream from its seed.
+
+**Why hand-written, when a package was on the table.** The user offered one.
+Mulberry32 is six lines and beats the obvious candidate (`seedrandom`) on both
+size and maintenance; the whole thing is behind one module, so swapping it for a
+package later is a one-file change. This also keeps the "simulation stays
+dependency-free" split from "Dependencies stay minimal" intact.
+
+**Seed handling.** The seed is a short base-36 string, read from the URL hash on
+load and written back there whenever it changes, so a run is a link. `r` rolls a
+new one, which clears the density buffer and re-inits. `Random.randomSeed` is
+the one remaining `Math.random` call in the codebase — it picks the seed, it is
+not part of the simulation.
+
+**What is reproducible, and what is not.** Seed plus parameters plus **window
+size** determine the run: `init` spawns from the stream, so a different canvas
+size consumes it differently. Mouse-driven focal points (`f`, `+`) break
+determinism too, by design — they are input, not state. Making the render
+size-independent is Phase 3/4 work (re-render at resolution from a seed), not
+something this phase promised.
+
 # The density buffer, and the fade that came with it
 
 Date: 2026-09-06

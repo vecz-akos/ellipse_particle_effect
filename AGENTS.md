@@ -76,6 +76,10 @@ Rules for all of it:
   it accumulates hits into `DensityBuffer` and blits one `ImageData`. The old
   `record` flag and the per-particle alpha are gone — brightness is `exposure`
   and `gamma` now.
+- **No `Math.random` in the simulation.** Everything random draws from the
+  single `Random` instance in `main.js` (passed into `Particle.update`), or the
+  seed stops determining the image. The one exception is `Random.randomSeed`,
+  which picks the seed itself.
 - **`particleCorrection` uses a tolerance of three screens.** Particles far off
   canvas are still part of the simulation; recycling them sooner tightens the
   image visibly.

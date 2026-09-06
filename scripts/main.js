@@ -3,6 +3,7 @@ import Particle from "./Particle.js";
 import Point from "./Point.js";
 import MouseFollower from "./MouseFollower.js";
 import DensityBuffer from "./DensityBuffer.js";
+import Random from "./Random.js";
 
 const canvas = document.querySelector('canvas'),
     ctx = canvas.getContext("2d")
@@ -21,6 +22,17 @@ let width = canvas.width = window.innerWidth,
 
 const density = new DensityBuffer(width, height)
 let imageData = ctx.createImageData(width, height)
+
+// The seed lives in the URL hash, so a run can be linked and replayed.
+const random = new Random(decodeURIComponent(location.hash.slice(1)) || Random.randomSeed())
+
+const applySeed = (seed) => {
+    random.seed = String(seed)
+    location.hash = encodeURIComponent(random.seed)
+    console.info(`seed: ${random.seed}`)
+    density.clear()
+    init()
+}
 
 const rgb = (hex) => [
     parseInt(hex.slice(1, 3), 16),
@@ -42,9 +54,11 @@ const init = () => {
     density.resize(width, height)
     imageData = ctx.createImageData(width, height)
 
+    random.reset()
+
     particles = []
     for (let i = 0; i < 20_000; i++) {
-        particles.push(new Particle(Math.random()*width, Math.random()*height))
+        particles.push(new Particle(random.between(0, width), random.between(0, height)))
     }
 }
 
@@ -58,7 +72,7 @@ const update = () => {
     let correctionCounter = 0
     if (animate) {
         for (let p of particles) {
-            p.update(nEllipse)
+            p.update(nEllipse, random)
             correctionCounter += particleCorrection(p)
         }
     }
@@ -108,18 +122,18 @@ const particleCorrection = (particle) => {
     const tolerance = 3
     if (particle.x > tolerance*width || particle.x < -tolerance*width) {
         change = true
-        particle.x = Math.random()*width
+        particle.x = random.between(0, width)
     }
     if (particle.y > tolerance*height || particle.y < -tolerance*height) {
         change = true
-        particle.y = Math.random()*height
+        particle.y = random.between(0, height)
     }
     return change
 }
 
 window.onload = () => {
-    init()
-    
+    applySeed(random.seed)
+
     mf.addMouseMoveEventListener()
 
     document.body.addEventListener("keydown", (event) => {
@@ -141,6 +155,9 @@ window.onload = () => {
                 break
             case "f":
                 followFocalPoint = !followFocalPoint
+                break
+            case "r":
+                applySeed(Random.randomSeed())
                 break
             default:
                 break

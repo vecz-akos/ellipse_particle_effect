@@ -6,11 +6,11 @@ export default class Particle extends Point {
         super(x, y)
     }
 
-    update(nEllipse) {
+    update(nEllipse, random) {
         if (nEllipse instanceof NEllipse) {
             const x = nEllipse.calcDistance(this)
             const d = Math.sqrt(x+128)*8-90
-            const angle = Math.random()*Math.PI*2
+            const angle = random.angle()
             this.x += d * Math.cos(angle)
             this.y += d * Math.sin(angle)
         }
