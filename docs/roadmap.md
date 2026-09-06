@@ -72,7 +72,21 @@ export a small preview, then re-render the exact same image at print size.
 
 ---
 
-## Phase 3 — Control panel
+## Phase 3 — Control panel — **mostly done**
+
+Landed: the docked panel with its three tabs, the `Params` object the panel and
+the keyboard share, every parameter above live-editable, per-point focal weights
+and canvas dragging, the aspect/resolution dropdowns, and PNG save. See "Control
+panel, and the canvas as a render target" in `docs/decisions.md`.
+
+**Still open in this phase:** presets as JSON, the full parameter state in the
+URL hash (only the seed is there), and the resolution multiplier / re-render at
+size. The last one needs a decision first — a seed is only reproducible at a
+fixed resolution while the simulation works in pixels, so a true "re-render this
+image bigger" means moving to normalised coordinates and accepting that the
+tuned step constants change meaning.
+
+The original plan follows, for context.
 
 A multi-tab panel docked to the right edge of the window; the canvas keeps the
 rest. This is where a CSS/component library is welcome — see "Dependencies stay

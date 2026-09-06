@@ -17,7 +17,8 @@ different is a regression.
 ## Layout
 
 ```
-index.html            Vite entry point; holds the whole (tiny) stylesheet inline
+index.html            Vite entry point; the stage element and the canvas
+styles.css            all styling, hand-written, no framework
 vite.config.js        one setting: base "./" so builds open from the filesystem
 scripts/              the sketch — one class per file, default-exported
 docs/                 architecture, the decision log, and the roadmap
@@ -58,17 +59,25 @@ Rules for all of it:
   "Dependencies stay minimal" entry in `docs/decisions.md`.
 - **No semicolons** in `scripts/`, and one class per file with a `default`
   export. Match it.
-- Plain ES modules and Canvas 2D. No TypeScript, no JSX. Styles currently live
-  inline in `index.html`; that holds until there is enough UI to justify a
-  stylesheet or a CSS framework.
-- `main.js` owns all mutable state as module-level `let`s. Keep it that way
-  rather than introducing a state object; the file is small enough.
+- Plain ES modules and Canvas 2D. No TypeScript, no JSX. Styling is hand-written
+  in `styles.css`; there is no CSS framework, and the panel is built from native
+  inputs.
+- **Every tunable belongs in `Params`.** The panel and the keyboard both write
+  that one object and the loop reads it; do not add a new module-level `let` in
+  `main.js` for something the user can change. Non-tunable runtime state (the
+  canvas size, the particle array, the drag target) stays in `main.js`.
 
 ## Hard constraints that look arbitrary but aren't
 
-- **The step-length formula `sqrt(error + 128) * 8 - 90` in `Particle.update`
-  is hand-tuned.** All three constants are load-bearing for the look. Do not
-  "simplify" them.
+- **The step-length formula `sqrt(error + offset) * scale - bias` in
+  `Particle.update` is hand-tuned.** The defaults in `Params` (128, 8, 90) are
+  load-bearing for the look. They are editable in the panel now; do not
+  "simplify" the formula or change what the defaults are.
+- **The canvas is not the window.** Its pixel size comes from `Params.aspect`
+  and `Params.resolution`, and CSS scales it into the area beside the panel.
+  Anything reading mouse coordinates must go through `toCanvas` in `main.js`,
+  and resolution is part of the look — the same seed at another resolution is a
+  different image, not a larger one.
 - **This is not simulated annealing**, despite the repository name — no energy
   acceptance, no cooling schedule. Adding a real one would kill the effect,
   because the system is supposed to never converge. Full explanation in
@@ -81,9 +90,12 @@ Rules for all of it:
   single `Random` instance in `main.js` (passed into `Particle.update`), or the
   seed stops determining the image. The one exception is `Random.randomSeed`,
   which picks the seed itself.
-- **`particleCorrection` uses a tolerance of three screens.** Particles far off
-  canvas are still part of the simulation; recycling them sooner tightens the
-  image visibly.
+- **`particleCorrection` keeps an equal margin on every side**, one canvas by
+  default (`Params.tolerance`). Particles out there are still part of the
+  simulation; recycling them sooner tightens the image visibly. The margin used
+  to be measured from the canvas origin, which made the right and bottom edges
+  one canvas stricter than the left and top — that asymmetry was a bug, not a
+  tuning.
 
 ## Gotchas already investigated
 
@@ -91,8 +103,12 @@ Rules for all of it:
   `removeEventListener` needs the same function reference — passing a fresh
   arrow function silently removes nothing. This was a real bug; do not inline it
   back.
-- Resizing the window reallocates every particle; the accumulated density
-  survives, because `DensityBuffer.resize` copies the overlapping region.
+- Resizing the window (or changing aspect/resolution) reallocates every
+  particle; the accumulated density survives, because `DensityBuffer.resize`
+  copies the overlapping region and recomputes `max` over it.
+- The keyboard handler returns early when the event comes from inside `.panel`,
+  so typing a seed does not toggle modes. After changing `Params` from a
+  shortcut it calls `panel.sync()`, or the controls would show stale values.
 - `correctionCounter` in `update` is accumulated and unused. It is a debug hook
   left in place deliberately; a linter will flag it.
 

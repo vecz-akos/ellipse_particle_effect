@@ -5,17 +5,21 @@ steps whose length depends on how far they are from an *n-ellipse* — the curve
 where the distances to every focal point sum to a fixed value. Near the curve
 the steps shrink to sub-pixel, so particles effectively freeze there; elsewhere
 they roam. Every hit is counted into a density buffer and tone-mapped to the
-screen, so the traces build up into orbit-like, x-ray-looking images. Move the
-mouse and add focal points to steer the shape.
+screen, so the traces build up into orbit-like, x-ray-looking images. Drag the
+focal points around, or add new ones, to steer the shape; a panel on the right
+edits everything else live.
 
 | Component | Role |
 | --- | --- |
 | `scripts/Point.js` | `{x, y}` plus distance helpers |
+| `scripts/FocalPoint.js` | a `Point` with its own weight in the target sum |
 | `scripts/NEllipse.js` | focal points, target distance sum, per-point error |
 | `scripts/Particle.js` | a `Point` that steps according to its error |
 | `scripts/MouseFollower.js` | caches the cursor position |
 | `scripts/DensityBuffer.js` | per-pixel hit counts, and the tone map that turns them into an image |
 | `scripts/Random.js` | the seeded PRNG every random step comes from |
+| `scripts/Params.js` | every tunable in one object, and the canvas sizing rule |
+| `scripts/Panel.js` | the control panel on the right |
 | `scripts/main.js` | canvas, animation loop, keyboard controls |
 
 ## Quick start
@@ -29,7 +33,36 @@ npm run build      # bundle into dist/, openable straight from the filesystem
 Vite is the only dependency, and it is a devDependency — the sketch itself is
 plain ES modules and Canvas 2D.
 
+## The panel
+
+A fixed column on the right; the canvas gets the rest of the window and is
+scaled to fit it whole.
+
+- **Parameters** — canvas aspect and render resolution; particle count and
+  recycle tolerance; the focal-point list with per-point coordinates and weight;
+  the tone map (exposure, gamma, adaptation) and the two colours; and last, the
+  step-curve constants.
+- **Render** — the seed (type one and apply it, or roll a new one), PNG save at
+  the current canvas resolution, and clearing the accumulated image.
+- **Playback** — Phase 5, not built yet.
+
+The four mode toggles sit in a strip at the bottom of the panel, outside the
+tabs, so they are visible whichever tab is open — they mirror the keyboard.
+
+**Recycle tolerance** is how far past the canvas a particle may drift before it
+is teleported back to a random point on it, measured in canvases and applied
+equally on all four sides. Particles outside the canvas are still simulated and
+can wander back, so a lower value collects them sooner and tightens the image;
+`0` recycles a particle the moment it leaves the visible area.
+
+**Aspect and resolution are separate on purpose.** The simulation works in
+pixels, so the render resolution is part of the look: the same seed at 4K is a
+different image from the same seed at 1080p, not a bigger one. The panel shows
+the resulting pixel size under the dropdowns.
+
 ## Controls
+
+Keyboard shortcuts stay the fast path, and the panel follows them.
 
 | Key | Effect |
 | --- | --- |
@@ -50,8 +83,9 @@ so a long run behaves like an exposure with a slowly closing aperture.
 
 The run is driven by a seeded PRNG, and the seed is in the URL hash — copy the
 link and you get the same image back. `r` rolls a new seed. Reproducibility
-holds for a given window size, and stops the moment you steer the shape with the
-mouse.
+holds for a given canvas resolution, and stops the moment you steer the shape
+with the mouse. Only the seed is in the URL — the rest of the parameters are not
+saved yet.
 
 ## Documentation
 

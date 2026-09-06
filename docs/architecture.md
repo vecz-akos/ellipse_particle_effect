@@ -1,10 +1,16 @@
 # Architecture
 
-A single canvas filling the viewport, one `requestAnimationFrame` loop, and a
-flat array of particles. There is no state container, no event bus and no
-framework: `main.js` owns every mutable variable and the four classes under
-`scripts/` are plain data plus one method each. Vite serves and bundles the
-modules but does not participate in the runtime.
+A canvas and a control panel side by side, one `requestAnimationFrame` loop, and
+a flat array of particles. There is no state container, no event bus and no
+framework: every tunable lives in one `Params` instance that the panel and the
+keyboard write and the loop reads, and the classes under `scripts/` are plain
+data plus a method or two each. Vite serves and bundles the modules but does not
+participate in the runtime.
+
+The canvas has its own pixel size — an aspect ratio and a render resolution from
+`Params` — and CSS scales it to fit the area left of the panel. Screen
+coordinates and canvas coordinates are therefore different things; `main.js`
+converts with `toCanvas`.
 
 ## Components
 
@@ -22,20 +28,28 @@ sum to `d` — two foci give an ordinary ellipse, more give the lobed curves in
 the reference images.
 
 `addFocalPoint` prepends (so index 0 is always the newest, which is what the
-mouse-follow mode steers) and grows `d` by `unit_d` unless an explicit
-contribution is passed; `removeFocalPoint` is the inverse. `calcDistance(point)`
-returns the point's **error**: how far the sum of its distances is from `d`.
-Zero means the point sits on the curve.
+mouse-follow mode steers) and gives the point a `weight` — `unit_d` unless an
+explicit contribution is passed — promoting a plain `Point` to a `FocalPoint` if
+needed. `d` is `baseD` plus the sum of those weights, recomputed by
+`recalculateD`, so `setWeight` can change one point's contribution on its own.
+`calcDistance(point)` returns the point's **error**: how far the sum of its
+distances is from `d`. Zero means the point sits on the curve.
 
 It knows nothing about the canvas, the mouse, or particles.
 
+### `scripts/FocalPoint.js`
+
+A `Point` with a `weight`: its own contribution to the target sum. Exists so a
+focal point's pull can be edited in the panel after it was added.
+
 ### `scripts/Particle.js`
 
-A `Point` that can step. `update(nEllipse)` converts its error into a step
-length and moves it that far in a random direction. The mapping and its
-constants are explained in `decisions.md`, under "Simulated annealing is a name,
-not an implementation" — do not treat it as a physics integrator, there is no
-velocity and no memory between frames.
+A `Point` that can step. `update(nEllipse, random, step)` converts its error into
+a step length and moves it that far in a random direction. The mapping and its
+constants (`step.offset`, `step.scale`, `step.bias`, editable in the panel) are
+explained in `decisions.md`, under "Simulated annealing is a name, not an
+implementation" — do not treat it as a physics integrator, there is no velocity
+and no memory between frames.
 
 ### `scripts/MouseFollower.js`
 
@@ -63,28 +77,49 @@ loop only indexes that table — which is also where Phase 4's colormap will go.
 It knows nothing about particles or the canvas; `main.js` does the
 `putImageData`.
 
+### `scripts/Params.js`
+
+Every tunable in one object: canvas `aspect` and `resolution`, `particleCount`,
+`tolerance`, the `step` curve constants, the tone-map settings and colours, and
+the four mode toggles. `canvasSize(freeWidth, freeHeight)` turns the aspect and
+resolution into the canvas' pixel size — the one place that decision is made.
+`Params.aspects` and `Params.resolutions` are the dropdown contents.
+
+### `scripts/Panel.js`
+
+The control panel: three tabs (Parameters, Render, Playback) built from native
+inputs, plus a footer with the four mode toggles that sits outside the tabs and
+stays visible — those are the ones a keyboard shortcut flips. The Parameters tab
+runs from the settings that change the frame outright to the ones rarely touched
+once a look is found: canvas, simulation, focal points, tone map, step curve. It holds no state — every control gets a `read`/`write` closure over the
+`Params` instance, plus an optional callback telling `main.js` what has to be
+rebuilt (canvas geometry, particles, seed). `sync` pulls every control back from
+`Params`, which is how a keyboard shortcut keeps the UI honest;
+`syncFocalPoints` rebuilds the focal-point rows and `refreshFocalValues` follows
+a drag.
+
 ### `scripts/main.js`
 
 The application. Owns the canvas and its 2D context, the density buffer and its
 `ImageData`, the single `Random` instance and the seed (read from and written to
-the URL hash by `applySeed`), the particle array, the single `NEllipse`
-instance, all the toggle flags (`animate`, `clearCanvas`, `showFocalPoints`,
-`followFocalPoint`) and the tone-map parameters (`exposure`, `gamma`), the
-keyboard bindings, and the resize handler. `particleCorrection` recycles particles that have drifted
-several screens away back to a random on-screen position.
+the URL hash by `applySeed`), the particle array, the single `NEllipse`, `Params`
+and `Panel` instances, the keyboard bindings, focal-point dragging, PNG export,
+and the resize handler. `resizeCanvas` and `spawnParticles` are the two rebuild
+steps the panel triggers. `particleCorrection` recycles particles that have
+drifted several canvases away back to a random on-canvas position.
 
-### `index.html`
+### `index.html` and `styles.css`
 
-The Vite entry point. Carries the whole stylesheet inline — three rules to kill
-margins and make the canvas fill the page — and a single module `<script>`.
-There is no separate CSS file.
+The Vite entry point is a flex `body`: a `.stage` that centres the canvas, and
+the panel that `Panel.js` appends beside it. All styling lives in `styles.css` —
+hand-written, no framework, a dark surface with one accent colour.
 
 ## Frame flow
 
 ```
 requestAnimationFrame
    └─ update()
-       ├─ followFocalPoint ? focalPoints[0] ← mouse position
+       ├─ followFocalPoint ? focalPoints[0] ← mouse position, in canvas pixels
        ├─ for each particle:
        │     error = nEllipse.calcDistance(particle)   ← NEllipse
        │     particle steps by f(error) in a seeded random direction ← Particle, Random
@@ -96,17 +131,20 @@ requestAnimationFrame
             └─ showFocalPoints ? stroke a cross at each focus
 ```
 
-Resize cancels the pending frame, re-runs `init` (which reallocates every
-particle at a random position, and resizes the density buffer) and restarts the
-loop. The accumulated density survives the resize; the particles do not.
+A window resize, or an aspect/resolution change in the panel, recomputes the
+canvas size; if it actually changed, the density buffer is resized (keeping the
+overlapping region) and the particles are respawned from the seed. Nothing
+cancels the loop any more.
 
 ## What is absent today
 
-All three of these are planned; see `docs/roadmap.md` for the order and the
-reasoning.
+All of these are planned; see `docs/roadmap.md` for the order and the reasoning.
 
-- **No export path.** The density buffer holds the image, but there is no way to
-  save it at a different resolution; screenshots are taken by hand.
+- **No re-render at size.** PNG export writes the canvas at its current
+  resolution. A seed does not survive a resolution change — the simulation is in
+  pixels — so "preview small, render at print size" needs the normalised
+  coordinate space discussed in `decisions.md`.
+- **No presets.** The URL hash carries the seed only; the rest of `Params` is
+  not serialised.
 - **No post-processing.** The colour grading, bloom, vignette and grain in the
   reference images under `../imgs/` were applied afterwards in an image editor.
-- **No UI.** Every control is a single keypress; see `README.md`.

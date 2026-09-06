@@ -26,6 +26,70 @@ Paragraphs, tables, lists.
 
 ---
 
+# Recycle margin is symmetric now
+
+Date: 2026-09-06
+
+`particleCorrection` compared against `±tolerance * width`, which is measured
+from the canvas origin — so the right and bottom edges were one canvas stricter
+than the left and top. Unintended, and invisible until the panel put the number
+in front of someone. It now keeps `tolerance` canvases of margin beyond every
+edge, and `0` means "recycle as soon as it leaves the visible area".
+
+The default drops from 3 to 1 at the same time, which is a tighter image than
+before on all four sides. The old `AGENTS.md` line calling three screens
+deliberate is superseded: three was a starting point, not a tuning result.
+
+# Control panel, and the canvas as a render target
+
+Date: 2026-09-06
+
+Roadmap Phase 3, first pass. Three things landed together because they do not
+work apart.
+
+**One parameters object.** `Params` holds every tunable — canvas aspect and
+resolution, particle count, recycle tolerance, the step-curve constants, the
+tone map, the colours, the four mode toggles. The panel and the keyboard handler
+both write it, the loop only reads it. This supersedes the "main.js owns all
+mutable state as module-level `let`s" rule in `AGENTS.md`, which was right while
+there were six flags and wrong the moment two writers appeared.
+
+**The canvas is no longer the window.** It has its own pixel size, chosen from
+an aspect ratio and a render resolution, and CSS scales it to fit the space left
+next to the panel. `stage.clientWidth/clientHeight` is the available area, not
+the canvas size.
+
+The question this settled: should the dropdown offer aspect ratio only, with
+resolution left to a later export step? No — **resolution is part of the look,
+not an output setting**. The simulation is in pixels: the hand-tuned step curve
+is in pixels, focal points are pixel coordinates, and 20 000 particles cover a
+4K buffer a quarter as densely as a 1080p one. The same seed at a different
+resolution is a *different image*, not a bigger one. So both controls are
+exposed, and the panel shows the resulting pixel size.
+
+The alternative — normalising the simulation to a 0..1 space so a seed is
+resolution-independent — is the only route to "preview small, re-render at print
+size", and it was rejected for now because it changes the meaning of the tuned
+constants and therefore the picture. It stays open for the export work.
+
+**Hand-written CSS, no framework.** The panel is native `range`, `select`,
+`number`, `color` and `checkbox` inputs; a component library would have styled
+none of the parts that actually needed styling. `styles.css` replaces the inline
+`<style>` block in `index.html`. The "UI layer may use a library" split from
+"Dependencies stay minimal" stands — it was just not worth spending here.
+
+**Focal points became editable.** `FocalPoint extends Point` and carries its own
+`weight`, so `NEllipse.d` is the sum of the per-point weights plus a base — a
+single point's contribution can now be changed after it was added, which the old
+"add a number to a running total" version could not do. `addFocalPoint(point, d)`
+keeps its signature and promotes a plain `Point` to a `FocalPoint`. Points are
+also draggable on the canvas, with the panel's number fields following the drag.
+The empty `scripts/FocusPoint.js` placeholder is gone.
+
+**Not in this pass**, and still open in Phase 3: presets as JSON, the full state
+in the URL hash (only the seed is there), and re-render at a resolution
+multiplier on export. PNG save writes the canvas at its current resolution.
+
 # Density-to-colour lookup table
 
 Date: 2026-09-06
