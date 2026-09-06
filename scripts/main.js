@@ -24,7 +24,8 @@ let width = 1,
     imageData = null,
     particles = [],
     panel = null,
-    dragging = -1
+    dragging = -1,
+    recording = false
 
 const rgb = (hex) => [
     parseInt(hex.slice(1, 3), 16),
@@ -144,8 +145,13 @@ const update = () => {
 
 const draw = () => {
     // Accumulating mode is the old "record": mark it with a red frame, since
-    // nothing else on screen says the image is being kept.
-    canvas.classList.toggle("recording", !params.clearCanvas)
+    // nothing else on screen says the image is being kept. Only on a transition
+    // — this runs every frame.
+    const accumulating = !params.clearCanvas
+    if (accumulating !== recording) {
+        recording = accumulating
+        canvas.classList.toggle("recording", recording)
+    }
 
     if (params.animate) {
         if (params.clearCanvas) density.clear()
@@ -242,15 +248,15 @@ window.onload = () => {
 
             rescaleFocalPoints(previousWidth, previousHeight)
             applyDefaultWeight()
-            panel.setWeightRange(nEllipse.unit_d)
-            panel.syncFocalPoints()
+            panel.sync()
             density.clear()
             spawnParticles()
         },
         countChanged: () => spawnParticles(),
+        // The panel's own constructor can reach this before `panel` is assigned.
         weightChanged: () => {
             applySharedWeight()
-            panel.syncWeightControls()
+            if (panel) panel.syncWeightControls()
         },
         addFocalPoint: () => addFocalPoint(Math.round(width/2), Math.round(height/2)),
         removeFocalPoint: (index) => removeFocalPoint(index),
@@ -266,7 +272,7 @@ window.onload = () => {
     // The panel changed the stage width, so the canvas may need a second pass.
     if (resizeCanvas()) {
         applyDefaultWeight()
-        panel.setWeightRange(nEllipse.unit_d)
+        panel.sync()
     }
 
     addFocalPoint(Math.round(width/2), Math.round(height/2))

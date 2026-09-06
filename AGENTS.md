@@ -124,6 +124,20 @@ Rules for all of it:
 - The keyboard handler returns early when the event comes from inside `.panel`,
   so typing a seed does not toggle modes. After changing `Params` from a
   shortcut it calls `panel.sync()`, or the controls would show stale values.
+- **`Panel.sync()` is the whole contract for writing `Params` from outside.** It
+  rereads values, recomputes the weight slider's range, clamps `sharedWeight`
+  into it, reapplies the shared weight to the points, and locks whichever weight
+  editor is not in charge. Add panel state that `sync` does not restore and the
+  first preset loaded from a differently sized canvas will expose it. It calls
+  back into the handlers, so it must not run from the `Panel` constructor — and
+  **a handler must never call `sync()` back.** `weightChanged` calls the narrow
+  `panel.syncWeightControls()` on purpose; widening it to `panel.sync()` looks
+  like the more thorough choice and is infinite recursion.
+- **Anything the animation loop writes to the DOM has to check first.** Follow
+  mode calls `refreshFocalValues` sixty times a second and `draw` looks at the
+  recording class every frame, so both go through a changed-value guard
+  (`setNumber` / `setText` in `Panel.js`, the `recording` flag in `main.js`).
+  Do not add an unconditional DOM write to a per-frame path.
 - `savePng` exports an offscreen canvas built from the last `imageData`, not the
   visible one, because `draw` strokes the focal-point crosses onto the visible
   canvas after the blit. Anything drawn on top of the image belongs there, not in

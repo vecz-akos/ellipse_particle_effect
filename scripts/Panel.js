@@ -7,6 +7,17 @@ const el = (tag, className, text) => {
     return node
 }
 
+// Writing an input that already holds the value is still a DOM write, and these
+// run every frame while a focal point is being dragged or followed.
+const setNumber = (input, value) => {
+    const text = String(Math.round(value))
+    if (input.value !== text) input.value = text
+}
+
+const setText = (node, text) => {
+    if (node.textContent !== text) node.textContent = text
+}
+
 const TABS = [
     { id: "parameters", label: "Parameters" },
     { id: "render", label: "Render" },
@@ -31,6 +42,10 @@ export default class Panel {
         this.buildModes()
         this.showTab("parameters")
         document.body.appendChild(this.root)
+        // Not sync(): that calls back into the handlers, and the caller has not
+        // finished constructing us yet. The build already set every value, the
+        // slider's range comes from weightRange, and syncFocalPoints locked the
+        // weight editors.
     }
 
     buildTabs() {
@@ -208,13 +223,13 @@ export default class Panel {
             change: weightChanged,
             hint: "Off: one slider sizes every point. On: each point carries its own weight."
         })
+        const range = this.weightRange()
         this.sharedWeightInput = this.slider(focal, "Weight", {
             read: () => params.sharedWeight,
             write: (v) => params.sharedWeight = v,
-            min: 1, max: 2, step: 1,
+            min: range.min, max: range.max, step: 1,
             change: weightChanged
         })
-        this.setWeightRange(this.nEllipse.unit_d)
         focal.appendChild(el("p", "hint", "Drag a point on the canvas to move it."))
         this.focalList = el("div", "focal-list")
         focal.appendChild(this.focalList)
@@ -408,23 +423,25 @@ export default class Panel {
         this.refreshFocalValues()
     }
 
-    // An eighth of the shorter canvas side up to one and a half times it; unit_d
-    // is a third of that side, hence the 3/8 and 4.5 factors.
-    setWeightRange(unit) {
-        this.sharedWeightInput.min = Math.max(1, Math.round(unit*3/8))
-        this.sharedWeightInput.max = Math.max(2, Math.round(unit*4.5))
-        this.sync()
+    // Derived, never stored: an eighth of the shorter canvas side up to one and
+    // a half times it, and unit_d is a third of that side — hence 3/8 and 4.5.
+    weightRange() {
+        const unit = this.nEllipse.unit_d
+        return {
+            min: Math.max(1, Math.round(unit*3/8)),
+            max: Math.max(2, Math.round(unit*4.5))
+        }
     }
 
     refreshFocalValues() {
         this.nEllipse.focalPoints.forEach((point, index) => {
             const inputs = this.focalRows[index]
             if (!inputs) return
-            inputs.x.value = Math.round(point.x)
-            inputs.y.value = Math.round(point.y)
-            inputs.weight.value = Math.round(point.weight)
+            setNumber(inputs.x, point.x)
+            setNumber(inputs.y, point.y)
+            setNumber(inputs.weight, point.weight)
         })
-        this.targetSumReadout.textContent = `Target sum d = ${Math.round(this.nEllipse.d)} px`
+        setText(this.targetSumReadout, `Target sum d = ${Math.round(this.nEllipse.d)} px`)
     }
 
     setSeed(seed) {
@@ -432,11 +449,28 @@ export default class Panel {
     }
 
     setCanvasSize(width, height) {
-        this.sizeReadout.textContent = `${width} × ${height} px`
+        setText(this.sizeReadout, `${width} × ${height} px`)
     }
 
-    // Pulls every control back from Params, for changes made by the keyboard.
+    // Rereads everything from Params: values, the weight slider's range, and
+    // which of the two weight editors is live. Whatever writes Params from
+    // outside — the keyboard today, presets later — only has to call this.
     sync() {
+        const { min, max } = this.weightRange()
+        this.sharedWeightInput.min = min
+        this.sharedWeightInput.max = max
+
+        // A range input clamps what it shows and nothing else, so an
+        // out-of-range value would leave the panel and the simulation quietly
+        // disagreeing. Clamp Params itself instead.
+        this.params.sharedWeight =
+            Math.min(max, Math.max(min, Math.round(this.params.sharedWeight)))
+
+        // Each point holds its own copy of the weight, so a sharedWeight written
+        // from outside reaches the figure only by being applied again.
+        if (this.handlers.weightChanged) this.handlers.weightChanged()
+
         for (const control of this.controls) control()
+        this.syncWeightControls()
     }
 }
