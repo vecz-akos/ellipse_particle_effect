@@ -30,8 +30,9 @@ the reference images.
 `addFocalPoint` prepends (so index 0 is always the newest, which is what the
 mouse-follow mode steers) and gives the point a `weight` — `unit_d` unless an
 explicit contribution is passed — promoting a plain `Point` to a `FocalPoint` if
-needed. `d` is `baseD` plus the sum of those weights, recomputed by
-`recalculateD`, so `setWeight` can change one point's contribution on its own.
+needed. `d` is exactly the sum of those weights, recomputed by `recalculateD`,
+so `setWeight` can change one point's contribution on its own and a weight
+shared by every point sizes the whole figure.
 `calcDistance(point)` returns the point's **error**: how far the sum of its
 distances is from `d`. Zero means the point sits on the curve.
 

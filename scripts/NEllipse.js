@@ -5,7 +5,6 @@ export default class NEllipse {
     constructor(d=0) {
         this.focalPoints = []
         this.unit_d = d
-        this.baseD = d
         this.d = d // expected sum of distances from focal points
     }
 
@@ -40,9 +39,11 @@ export default class NEllipse {
         }
     }
 
-    // d is the sum of the per-point weights, so editing one weight is enough.
+    // d is exactly the sum of the per-point weights — no constant term, so a
+    // shared weight W over n points gives d = n*W. See "One weight for every
+    // focal point" in docs/decisions.md.
     recalculateD() {
-        this.d = this.focalPoints.reduce((sum, focal) => sum + focal.weight, this.baseD)
+        this.d = this.focalPoints.reduce((sum, focal) => sum + focal.weight, 0)
     }
 
     calcDistance(point) {

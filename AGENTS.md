@@ -78,6 +78,10 @@ Rules for all of it:
   Anything reading mouse coordinates must go through `toCanvas` in `main.js`,
   and resolution is part of the look — the same seed at another resolution is a
   different image, not a larger one.
+- **`d` is exactly the sum of the focal-point weights.** There is no constant
+  term any more — the old `baseD` was the startup point's weight in disguise, and
+  removing it is what makes the shared weight slider a size control (`d = n·W`).
+  Do not reintroduce a term that belongs to no point.
 - **This is not simulated annealing**, despite the repository name — no energy
   acceptance, no cooling schedule. Adding a real one would kill the effect,
   because the system is supposed to never converge. Full explanation in

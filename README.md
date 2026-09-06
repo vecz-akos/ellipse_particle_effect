@@ -39,7 +39,8 @@ A fixed column on the right; the canvas gets the rest of the window and is
 scaled to fit it whole.
 
 - **Parameters** — canvas aspect and render resolution; particle count and
-  recycle tolerance; the focal-point list with per-point coordinates and weight;
+  recycle tolerance; the focal points — one shared weight to resize the whole
+  figure, or a per-point coordinate and weight for each;
   the tone map (exposure, gamma, adaptation) and the two colours; and last, the
   step-curve constants.
 - **Render** — the seed (type one and apply it, or roll a new one), PNG save at

@@ -60,8 +60,22 @@ const resizeCanvas = () => {
 // it has to follow the canvas whenever the pixel size changes.
 const applyDefaultWeight = () => {
     nEllipse.unit_d = Math.round(Math.min(width, height)/3)
-    nEllipse.baseD = nEllipse.unit_d
+    // In manual mode the slider tracks the canvas default, so switching back to
+    // the shared weight starts from the size the canvas suggests. With no points
+    // yet — both passes on load — there is nothing to preserve either.
+    if (params.manualWeight || nEllipse.numberOfFocalPoints === 0) {
+        params.sharedWeight = nEllipse.unit_d
+    }
     nEllipse.recalculateD()
+}
+
+// One weight for every point. Writes go through setWeight so d is recalculated
+// the one existing way.
+const applySharedWeight = () => {
+    if (params.manualWeight) return
+    for (let i = 0; i < nEllipse.numberOfFocalPoints; i++) {
+        nEllipse.setWeight(i, params.sharedWeight)
+    }
 }
 
 // A deliberate resolution change takes the whole figure with it: the points keep
@@ -72,6 +86,7 @@ const rescaleFocalPoints = (fromWidth, fromHeight) => {
     const scaleX = width/fromWidth,
         scaleY = height/fromHeight,
         scaleWeight = Math.min(width, height)/Math.min(fromWidth, fromHeight)
+    params.sharedWeight = Math.round(params.sharedWeight*scaleWeight)
     for (const point of nEllipse.focalPoints) {
         point.x *= scaleX
         point.y *= scaleY
@@ -95,7 +110,10 @@ const applySeed = (seed) => {
     spawnParticles()
 }
 
+// weight null means "whatever the panel says": the shared weight while that is
+// in charge, so a new point matches the others, or unit_d in manual mode.
 const addFocalPoint = (x, y, weight=null) => {
+    if (weight === null && !params.manualWeight) weight = params.sharedWeight
     nEllipse.addFocalPoint(new FocalPoint(x, y), weight)
     if (panel) panel.syncFocalPoints()
 }
@@ -224,11 +242,16 @@ window.onload = () => {
 
             rescaleFocalPoints(previousWidth, previousHeight)
             applyDefaultWeight()
+            panel.setWeightRange(nEllipse.unit_d)
             panel.syncFocalPoints()
             density.clear()
             spawnParticles()
         },
         countChanged: () => spawnParticles(),
+        weightChanged: () => {
+            applySharedWeight()
+            panel.syncWeightControls()
+        },
         addFocalPoint: () => addFocalPoint(Math.round(width/2), Math.round(height/2)),
         removeFocalPoint: (index) => removeFocalPoint(index),
         seedChanged: (seed) => applySeed(seed),
@@ -241,9 +264,12 @@ window.onload = () => {
     location.hash = encodeURIComponent(random.seed)
 
     // The panel changed the stage width, so the canvas may need a second pass.
-    if (resizeCanvas()) applyDefaultWeight()
+    if (resizeCanvas()) {
+        applyDefaultWeight()
+        panel.setWeightRange(nEllipse.unit_d)
+    }
 
-    addFocalPoint(Math.round(width/2), Math.round(height/2), 0)
+    addFocalPoint(Math.round(width/2), Math.round(height/2))
     spawnParticles()
 
     mf.addMouseMoveEventListener()

@@ -201,6 +201,20 @@ export default class Panel {
         })
 
         const focal = this.section(body, "Focal points")
+        const { weightChanged } = this.handlers
+        this.toggle(focal, "Manual", {
+            read: () => params.manualWeight,
+            write: (v) => params.manualWeight = v,
+            change: weightChanged,
+            hint: "Off: one slider sizes every point. On: each point carries its own weight."
+        })
+        this.sharedWeightInput = this.slider(focal, "Weight", {
+            read: () => params.sharedWeight,
+            write: (v) => params.sharedWeight = v,
+            min: 1, max: 2, step: 1,
+            change: weightChanged
+        })
+        this.setWeightRange(this.nEllipse.unit_d)
         focal.appendChild(el("p", "hint", "Drag a point on the canvas to move it."))
         this.focalList = el("div", "focal-list")
         focal.appendChild(this.focalList)
@@ -209,6 +223,10 @@ export default class Panel {
             if (this.handlers.addFocalPoint) this.handlers.addFocalPoint()
         })
         focal.appendChild(add)
+        // d is now exactly the sum of the weights; showing it makes the slider's
+        // effect legible with several points on the canvas.
+        this.targetSumReadout = el("p", "readout")
+        focal.appendChild(this.targetSumReadout)
         this.syncFocalPoints()
 
         const tone = this.section(body, "Tone map")
@@ -354,6 +372,7 @@ export default class Panel {
                 input.type = "number"
                 input.step = key === "weight" ? 10 : 1
                 input.value = Math.round(point[key])
+                if (key === "weight") input.disabled = !this.params.manualWeight
                 input.addEventListener("input", () => {
                     const value = Number(input.value)
                     if (Number.isNaN(value)) return
@@ -377,6 +396,24 @@ export default class Panel {
         if (this.nEllipse.numberOfFocalPoints === 0) {
             this.focalList.appendChild(el("p", "hint", "No focal points — the particles wander freely."))
         }
+        this.syncWeightControls()
+    }
+
+    // The shared weight and the per-row w fields are two views of one number, so
+    // exactly one of them is editable at a time.
+    syncWeightControls() {
+        const shared = !this.params.manualWeight
+        this.sharedWeightInput.disabled = !shared
+        for (const inputs of this.focalRows) inputs.weight.disabled = shared
+        this.refreshFocalValues()
+    }
+
+    // An eighth of the shorter canvas side up to one and a half times it; unit_d
+    // is a third of that side, hence the 3/8 and 4.5 factors.
+    setWeightRange(unit) {
+        this.sharedWeightInput.min = Math.max(1, Math.round(unit*3/8))
+        this.sharedWeightInput.max = Math.max(2, Math.round(unit*4.5))
+        this.sync()
     }
 
     refreshFocalValues() {
@@ -385,7 +422,9 @@ export default class Panel {
             if (!inputs) return
             inputs.x.value = Math.round(point.x)
             inputs.y.value = Math.round(point.y)
+            inputs.weight.value = Math.round(point.weight)
         })
+        this.targetSumReadout.textContent = `Target sum d = ${Math.round(this.nEllipse.d)} px`
     }
 
     setSeed(seed) {

@@ -26,6 +26,49 @@ Paragraphs, tables, lists.
 
 ---
 
+# One weight for every focal point, and the end of `baseD`
+
+Date: 2026-09-06
+
+Per-point weights are the right model, but they are the wrong control for the
+thing people do most often: making the whole figure bigger or smaller. That used
+to mean editing every row by hand and keeping the numbers in step. The "Focal
+points" section now opens with a **Manual** checkbox, **off** by default, and a
+**Weight** slider. With Manual off — the normal case — one slider sizes every
+point at once, including ones added afterwards, and the per-row `w` fields are
+read-only. Tick Manual and each point carries its own weight again: the rows
+become editable, a new point takes `NEllipse.unit_d`, and the slider is
+disabled. The two are the same number seen twice, so exactly one of them is
+editable at a time. Turning Manual off again leaves each point holding the value
+it has; restoring what it had before would be cleverer and less predictable.
+
+The slider runs from an eighth of the shorter canvas side to one and a half
+times it, and `setWeightRange` moves it with the canvas.
+
+The state (`manualWeight`, `sharedWeight`) lives in `Params`, and every
+write goes through `NEllipse.setWeight`, so `d` is recalculated the one existing
+way. `main.js` keeps `sharedWeight` equal to `unit_d` while Manual is on, so
+switching back starts from the size the canvas suggests, and
+`rescaleFocalPoints` scales it with everything else.
+
+**`baseD` is gone.** `d` used to be `baseD + Σ weights`, with `baseD` a constant
+belonging to no focal point — a leftover from the original code, which seeded
+`NEllipse` with a target sum before any point existed. It made the shared weight
+useless as a size control, since `d = baseD + n·W` is not proportional to `W`.
+
+Folding it into the points looked like it would change the look of existing
+seeds, and it does not — because the startup point was created with **weight 0**
+to compensate for `baseD`. With `baseD = unit_d` and weights `[0]`, `d` is
+`unit_d`; with no `baseD` and the startup point taking `unit_d` like every other
+point, `d` is `unit_d` again, and the two stay equal for any number of points
+(checked for one through four). So `baseD` was the first point's weight wearing
+a disguise. `recalculateD` now reduces from zero, the startup point is added
+with the ordinary default, and `d = n·W` under a shared weight — which is what
+makes the slider a size control at all. A readout under the list shows the
+resulting `d`, since with several points the number is no longer obvious.
+
+---
+
 # Recycle margin is symmetric now
 
 Date: 2026-09-06
