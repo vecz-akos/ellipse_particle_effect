@@ -1,0 +1,16 @@
+{
+  "name": "ellipse-particle-effect",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Particle field that settles onto n-ellipse curves, drawn on a canvas.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^8.2.2"
+  }
+}

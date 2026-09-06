@@ -13,6 +13,7 @@ let width = canvas.width = window.innerWidth,
     frame = 0,
     animate = true,
     clearCanvas = true,
+    record = false,
     showFocalPoints = false,
     followFocalPoint = false;
 
@@ -28,7 +29,7 @@ const init = () => {
     height = canvas.height = window.innerHeight
 
     particles = []
-    for (let i = 0; i < 10_000; i++) {
+    for (let i = 0; i < 20_000; i++) {
         particles.push(new Particle(Math.random()*width, Math.random()*height))
     }
 }
@@ -47,19 +48,19 @@ const update = () => {
             correctionCounter += particleCorrection(p)
         }
     }
-    //console.log(correctionCounter)
     draw()
     frame = window.requestAnimationFrame(update)
 }
 
 const draw = () => {
     if (animate) {
-        if (clearCanvas) {
+        if (clearCanvas || !record) {
             ctx.fillStyle = backgroundColor
             ctx.fillRect(0, 0, width, height)
+            if (!clearCanvas || record) record = !record
         }
 
-        ctx.fillStyle = foregroundColor + "44" // colorcode + alpha
+        ctx.fillStyle = foregroundColor + (record ? "16" : "44") // colorcode + alpha
         particles.forEach((p) => {
             if (p.x > 0 && p.x < width && p.y > 0 && p.y < height) {
                 ctx.beginPath()
@@ -96,7 +97,7 @@ const particleCorrection = (particle) => {
         change = true
         particle.x = Math.random()*width
     }
-    if (particle.y > tolerance*height || particle.x < -tolerance*height) {
+    if (particle.y > tolerance*height || particle.y < -tolerance*height) {
         change = true
         particle.y = Math.random()*height
     }
@@ -127,6 +128,7 @@ window.onload = () => {
                 break
             case "f":
                 followFocalPoint = !followFocalPoint
+                break
             default:
                 break
         }

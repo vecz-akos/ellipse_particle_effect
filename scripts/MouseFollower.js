@@ -3,15 +3,17 @@ export default class MouseFollower {
         this.x = 0
         this.y = 0
         this.domElement = domElement
+        // Stored so remove/add can pass the identical reference to removeEventListener.
+        this.handler = (e) => this.update(e)
         if (start) this.addMouseMoveEventListener()
     }
 
     addMouseMoveEventListener() {
-        this.domElement.addEventListener("mousemove", (e) => this.update(e))
+        this.domElement.addEventListener("mousemove", this.handler)
     }
 
     removeMouseMoveEventListener() {
-        this.domElement.removeEventListener("mousemove", (e) => this.update(e))
+        this.domElement.removeEventListener("mousemove", this.handler)
     }
 
     changeMouseMoveEventListener(domElement) {
