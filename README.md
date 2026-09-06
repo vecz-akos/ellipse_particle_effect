@@ -42,8 +42,10 @@ scaled to fit it whole.
 - **Parameters** — canvas aspect and render resolution; particle count and
   recycle tolerance; the focal points — one shared weight to resize the whole
   figure, or a per-point coordinate and weight for each;
-  the tone map (exposure, gamma, adaptation) and the two colours; and last, the
-  step-curve constants.
+  the tone map (exposure, gamma, adaptation) and the two colours; the
+  step-curve constants; and at the very bottom, **Reset parameters** — every
+  field back to its startup value with one centred focal point, keeping the
+  seed.
 - **Render** — the seed (type one and apply it, or roll a new one), PNG save at
   the current canvas resolution, presets as JSON, and clearing the accumulated
   image. The URL follows the state on its own; the preset file is for keeping

@@ -124,19 +124,96 @@ That refactor is part of this phase, not a separate one.
 ## Phase 4 — Post-processing in-app
 
 Replaces the manual image-editor pass that produced the renders in `../imgs/`.
+Those images are, almost exactly, a gradient colormap over density plus bloom —
+so this phase is less "add effects" than "stop doing by hand what the density
+buffer already has the information for".
 
-- **Tone curve + colormap** — mostly done by Phase 1; this is the UI for it.
-- **Bloom** — a blurred copy of the density buffer added back. A separable
-  Gaussian at half resolution is enough.
-- **Vignette** and **grain** — cheap, and they do a lot of the "photographic"
-  work in the reference images.
+### 4.0 — A tab of its own
 
-Order matters: tone map, then bloom, then vignette, then grain last (grain
-before bloom gets smeared and looks wrong).
+The tone map controls (`exposure`, `gamma`, `adaptation`, and the two colours)
+leave the Parameters tab for a new **Look** tab, sitting **second, between
+Parameters and Render**. Every effect below lands there too. Parameters keeps
+what shapes the simulation; Look keeps what turns density into a picture.
 
-Open question: keep it on the CPU over the density buffer, or move the whole
-render to a WebGL fragment shader. CPU first — it is simpler and the bottleneck
-after Phase 1 is the particle loop, not the post-process.
+This first step moves controls and changes no maths. Do it on its own — it is
+the one part of the phase with no visual consequence, so it should not be
+tangled up with a change that has one.
+
+### The pipeline
+
+```
+density buffer (Float32, linear)
+   ├─ bloom: blurred copy of the density, added back      ← linear space
+   ↓
+tone map + colormap  (log → white point → gamma → ramp)   ← the LUT
+   ↓ RGB
+vignette
+   ↓
+grain                                                     ← last
+   ↓
+ImageData → putImageData
+```
+
+**Bloom goes before the tone map, not after** — an earlier version of this
+roadmap said the opposite and was wrong. Bloom is light spilling, so it belongs
+in linear space: blur the density, add it back to the density, then tone-map the
+sum. Blurring the finished 8-bit RGB instead spreads already-clipped, already
+quantised values and comes out flat and grey. The orange haze around the bright
+curves in the reference images is exactly what "blur the density, then send the
+sum through the same log curve and ramp" produces — the halo lands lower on the
+ramp than the core, so it takes the ramp's middle colour on its own.
+
+Grain stays last: put it before the blur and it gets smeared into texture rather
+than reading as grain.
+
+### The effects
+
+| Effect | Where | Controls |
+| --- | --- | --- |
+| **Tone map** | existing | exposure, gamma, adaptation — moved, not changed |
+| **Bloom** | on density, pre-tone-map | radius, strength, threshold |
+| **Vignette** | RGB | amount, radius, softness |
+| **Grain** | RGB, last | amount, monochrome/colour, static or per-frame |
+| **Gradient colormap** | inside the LUT | multi-stop colour ramp, later in the phase |
+
+**The gradient colormap** replaces the two-colour background→foreground lerp
+with a ramp of several stops, so the black → orange → white grading of the
+reference images becomes a setting rather than a post-process. It is deliberately
+scheduled **late in this phase**, but it is worth knowing that it is also the
+*cheapest* of the four and the highest-impact: `buildTable` already exists and
+already runs once per density value, so this is a different body for one loop
+and no change at all to the pixel loop. T3 built the slot for it on purpose. It
+can be pulled forward if the phase drags.
+
+### Traps worth knowing before starting
+
+**Bloom breaks the assumption that makes the LUT fast.** `DensityBuffer` indexes
+its colour table by density *because density is an integer* — every `add` is a
+`+= 1`. A blurred float added into it is not. Do not answer this by going back to
+per-pixel `log1p`/`pow`; that undoes the measured win recorded in
+"Density-to-colour lookup table" in `docs/decisions.md`. Truncating the sum back
+to an integer index (`table[(d + bloom)|0]`) keeps the table and costs one add
+and one truncation per pixel — the quantisation error is far below one step of
+the ramp anywhere the eye can see it.
+
+**Grain must not draw from the simulation's RNG.** Everything random in the
+simulation comes from the single seeded `Random`, and the seed only reproduces an
+image because the stream is consumed in a fixed order. Grain is a render effect,
+not part of the simulation: pulling from that stream would make the picture
+depend on how many frames were rendered. Give it its own `Random`, or hash the
+pixel index with the seed.
+
+**This phase makes the render loop heavier, which puts T7 back on the table.**
+The render loop is already the measured bottleneck; a separable Gaussian over
+the density buffer, even at half resolution, is a real addition. T7 (repaint only
+the pixels that changed) was parked as premature — bloom is the thing that would
+un-park it. Alternatively, split live from export: a cheap preview at reduced
+resolution while you tune, full quality only on save.
+
+**Open question.** Keep the post-process on the CPU over the density buffer, or
+move the whole render to a WebGL fragment shader. CPU first: it is simpler, it
+keeps the one-render-path property, and a shader rewrite is a bigger commitment
+than this phase needs. Revisit if bloom alone makes the preview unusable.
 
 ---
 

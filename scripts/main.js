@@ -284,6 +284,22 @@ const applyPreset = (data) => {
     applySeed(preset.seed || random.seed)
 }
 
+// Back to the state a first visit without a link would give, seed aside: every
+// Params field from a fresh instance, one centred focal point, an empty image.
+// The seed is not a parameter and has no default, so it stays.
+const resetParams = () => {
+    Object.assign(params, new Params())
+
+    resizeCanvas()
+    nEllipse.focalPoints = []
+    applyDefaultWeight()
+    addFocalPoint(Math.round(width/2), Math.round(height/2))
+    panel.sync()
+    density.clear()
+    spawnParticles()
+    markStateChanged()
+}
+
 // The file comes from the user, so everything here can fail: Preset.apply
 // validates the contents, and the status line reports whatever went wrong.
 const loadPreset = async (file) => {
@@ -341,6 +357,7 @@ window.onload = () => {
         savePng,
         savePreset,
         loadPreset,
+        resetParams,
         changed: markStateChanged,
         clearImage: () => density.clear()
     })

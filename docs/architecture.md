@@ -92,7 +92,8 @@ The control panel: three tabs (Parameters, Render, Playback) built from native
 inputs, plus a footer with the four mode toggles that sits outside the tabs and
 stays visible — those are the ones a keyboard shortcut flips. The Parameters tab
 runs from the settings that change the frame outright to the ones rarely touched
-once a look is found: canvas, simulation, focal points, tone map, step curve. It holds no state — every control gets a `read`/`write` closure over the
+once a look is found: canvas, simulation, focal points, tone map, step curve, and
+a reset back to the constructor defaults. It holds no state — every control gets a `read`/`write` closure over the
 `Params` instance, plus an optional callback telling `main.js` what has to be
 rebuilt (canvas geometry, particles, seed). `sync` pulls every control back from
 `Params`, which is how a keyboard shortcut keeps the UI honest;

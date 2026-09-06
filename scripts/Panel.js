@@ -300,6 +300,14 @@ export default class Panel {
             write: (v) => params.step.bias = v,
             min: 0, max: 300, step: 1
         })
+
+        const defaults = this.section(body, "Defaults")
+        const reset = el("button", "wide", "Reset parameters")
+        reset.addEventListener("click", () => {
+            if (this.handlers.resetParams) this.handlers.resetParams()
+        })
+        defaults.appendChild(reset)
+        defaults.appendChild(el("p", "hint", "Every parameter back to its startup value, and one centred focal point. The seed is kept."))
     }
 
     // The modes live in a footer, outside the tabs: they are the things a

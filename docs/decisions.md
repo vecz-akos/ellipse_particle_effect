@@ -26,6 +26,28 @@ Paragraphs, tables, lists.
 
 ---
 
+# Reset means a fresh `Params`, not a stored snapshot
+
+Date: 2026-09-06
+
+The Parameters tab ends with a **Reset parameters** button. It writes a brand new
+`Params` instance over the live one, drops the focal points for a single centred
+one, clears the image and respawns — the state a first visit without a link
+gives. Nothing is remembered anywhere: the constructor already *is* the
+definition of a default, and `Preset.strip` compares against a fresh instance for
+the same reason. A "factory settings" object next to it would be a second copy to
+keep in step.
+
+**The seed is not reset**, because it has no default — it is rolled, not
+declared. Resetting the look while keeping the noise is also the useful half:
+`r` is right there when a new seed is what you want.
+
+It resets the mode toggles too, `SKIP` notwithstanding. Those are excluded from
+presets because a shared link should not pause someone's simulation; a button the
+user pressed on purpose is the opposite situation.
+
+---
+
 # The URL hash is a preset
 
 Date: 2026-09-06
