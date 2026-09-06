@@ -1,10 +1,21 @@
 import FocalPoint from "./FocalPoint.js"
+import Params from "./Params.js"
 
 const VERSION = 1
 
-// Session state, not image state: a preset should not pause the run or hand a
-// focal point to the mouse on load.
-const SKIP = new Set(["animate", "followFocalPoint"])
+// Marks a hash that carries a whole preset. A bare seed is base 36, so it can
+// never collide with this, and old seed-only links keep working. Matched as a
+// version pattern, so a link from a newer build is refused rather than mistaken
+// for a seed.
+const LINK = /^p(\d+)\./
+
+// Session state, not image state: a preset should not pause the run, hand a
+// focal point to the mouse, or drop a debugging overlay on a shared image.
+const SKIP = new Set(["animate", "followFocalPoint", "showFocalPoints"])
+
+// Pixel positions at full double precision are sixteen digits of noise —
+// DensityBuffer.add truncates to an integer anyway.
+const round = (value) => Math.round(value*100)/100
 
 // A saved image is the seed, the parameters and the focal points — plus the
 // canvas the points were placed on, so they can be scaled into a different one.
@@ -23,8 +34,70 @@ export default class Preset {
             seed,
             canvas: { width, height },
             params: saved,
-            focalPoints: nEllipse.focalPoints.map(({ x, y, weight }) => ({ x, y, weight }))
+            focalPoints: nEllipse.focalPoints.map(({ x, y, weight }) =>
+                ({ x: round(x), y: round(y), weight }))
         }
+    }
+
+    // What a link does not have to carry. `apply` only touches keys that are
+    // present, so leaving a default out restores it anyway — no schema change,
+    // no version bump. Weights go too while the shared weight is in charge:
+    // every point holds it, so they are derived rather than data.
+    //
+    // Only for links. A saved file keeps every field, because it is long-lived
+    // and a default that shifts in a later version would quietly rewrite an
+    // image someone saved months ago.
+    static strip(preset) {
+        const defaults = new Params()
+        const params = {}
+
+        for (const [key, value] of Object.entries(preset.params)) {
+            const fallback = defaults[key]
+            if (fallback !== null && typeof fallback === "object") {
+                const nested = {}
+                for (const [name, nestedValue] of Object.entries(value || {})) {
+                    if (nestedValue !== fallback[name]) nested[name] = nestedValue
+                }
+                if (Object.keys(nested).length > 0) params[key] = nested
+            } else if (value !== fallback) {
+                params[key] = value
+            }
+        }
+
+        const manual = "manualWeight" in preset.params
+            ? preset.params.manualWeight
+            : defaults.manualWeight
+
+        return {
+            ...preset,
+            params,
+            focalPoints: preset.focalPoints.map(({ x, y, weight }) =>
+                manual ? { x, y, weight } : { x, y })
+        }
+    }
+
+    // The same document as a URL hash: base64url, so nothing needs percent
+    // escaping and the link survives being pasted anywhere.
+    static encode(preset) {
+        const bytes = new TextEncoder().encode(JSON.stringify(Preset.strip(preset)))
+        let binary = ""
+        for (const byte of bytes) binary += String.fromCharCode(byte)
+        return `p${VERSION}.` + btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+    }
+
+    // null when the hash is not a preset at all (an old seed-only link); throws
+    // when it claims to be one and is damaged or from a version we cannot read.
+    static decode(hash) {
+        const marker = LINK.exec(hash)
+        if (!marker) return null
+        if (Number(marker[1]) !== VERSION) {
+            throw new Error(`Link format p${marker[1]} needs a newer build (this one reads p${VERSION})`)
+        }
+
+        const base64 = hash.slice(marker[0].length).replace(/-/g, "+").replace(/_/g, "/")
+        const binary = atob(base64)
+        const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
+        return JSON.parse(new TextDecoder().decode(bytes))
     }
 
     // Writes into the given Params and NEllipse, and returns what the caller has
@@ -56,9 +129,13 @@ export default class Preset {
             }
         }
 
+        // A point without a weight comes from a link that left it out: the
+        // shared weight is what every point holds there, and it has just been
+        // applied above.
         nEllipse.focalPoints = data.focalPoints
-            .filter(p => p && [p.x, p.y, p.weight].every(Number.isFinite))
-            .map(p => new FocalPoint(p.x, p.y, p.weight))
+            .filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y))
+            .map(p => new FocalPoint(p.x, p.y,
+                Number.isFinite(p.weight) ? p.weight : params.sharedWeight))
         nEllipse.recalculateD()
 
         const canvas = data.canvas || {}

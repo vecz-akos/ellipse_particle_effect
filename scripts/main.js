@@ -17,8 +17,27 @@ const density = new DensityBuffer(1, 1)
 const nEllipse = new NEllipse(0)
 const mf = new MouseFollower()
 
-// The seed lives in the URL hash, so a run can be linked and replayed.
-const random = new Random(decodeURIComponent(location.hash.slice(1)) || Random.randomSeed())
+// The URL hash carries the whole state, so a run can be linked and replayed.
+// Links from before that are a bare seed, and still work.
+// Everything here is a string someone pasted, so the whole of it — including
+// the percent decoding — has to survive being wrong.
+const readHash = () => {
+    let raw = ""
+    try {
+        raw = decodeURIComponent(location.hash.slice(1))
+        const preset = Preset.decode(raw)
+        if (preset) return { preset, seed: typeof preset.seed === "string" ? preset.seed : null }
+    } catch (error) {
+        // A hash that claims to be a state link and is not readable is not a
+        // seed either; say so and start fresh rather than pretending.
+        console.warn("Ignoring an unreadable state link:", error.message)
+        return { preset: null, seed: null }
+    }
+    return { preset: null, seed: raw || null }
+}
+
+const startup = readHash()
+const random = new Random(startup.seed || Random.randomSeed())
 
 let width = 1,
     height = 1,
@@ -106,10 +125,26 @@ const spawnParticles = () => {
 
 const applySeed = (seed) => {
     random.seed = String(seed) || Random.randomSeed()
-    location.hash = encodeURIComponent(random.seed)
     if (panel) panel.setSeed(random.seed)
     density.clear()
     spawnParticles()
+    markStateChanged()
+}
+
+// The hash follows the state, but not on every slider pixel: a change arms a
+// short timer, and the write goes through replaceState so dragging a control
+// does not fill the back button with a hundred entries.
+const HASH_DELAY = 400
+let hashDueAt = 0
+
+const markStateChanged = () => {
+    hashDueAt = performance.now() + HASH_DELAY
+}
+
+const writeHash = () => {
+    hashDueAt = 0
+    const state = Preset.capture(params, nEllipse, random.seed, width, height)
+    history.replaceState(null, "", `#${Preset.encode(state)}`)
 }
 
 // weight null means "whatever the panel says": the shared weight while that is
@@ -117,11 +152,13 @@ const applySeed = (seed) => {
 const addFocalPoint = (x, y, weight=null) => {
     if (weight === null && !params.manualWeight) weight = params.sharedWeight
     nEllipse.addFocalPoint(new FocalPoint(x, y), weight)
+    markStateChanged()
     if (panel) panel.syncFocalPoints()
 }
 
 const removeFocalPoint = (index=0) => {
     nEllipse.removeFocalPoint(index)
+    markStateChanged()
     if (panel) panel.syncFocalPoints()
 }
 
@@ -141,6 +178,7 @@ const update = () => {
         }
     }
     draw()
+    if (hashDueAt && performance.now() >= hashDueAt) writeHash()
     window.requestAnimationFrame(update)
 }
 
@@ -230,16 +268,10 @@ const savePreset = () => {
     panel.setPresetStatus(`Saved as n-ellipse-${random.seed}.json`)
 }
 
-// The file comes from the user, so everything here can fail: Preset.apply
-// validates the contents, and the status line reports whatever went wrong.
-const loadPreset = async (file) => {
-    let preset
-    try {
-        preset = Preset.apply(JSON.parse(await file.text()), params, nEllipse)
-    } catch (error) {
-        panel.setPresetStatus(`Could not load ${file.name}: ${error.message}`, true)
-        return
-    }
+// Shared by the file loader and the state link. Throws if the document is not a
+// valid preset; nothing is written before Preset.apply has accepted it.
+const applyPreset = (data) => {
+    const preset = Preset.apply(data, params, nEllipse)
 
     // The preset carries its own aspect and resolution, and coordinates that
     // belong to the canvas it was made on — so resize first, then scale the
@@ -250,6 +282,17 @@ const loadPreset = async (file) => {
     panel.syncFocalPoints()
     panel.sync()
     applySeed(preset.seed || random.seed)
+}
+
+// The file comes from the user, so everything here can fail: Preset.apply
+// validates the contents, and the status line reports whatever went wrong.
+const loadPreset = async (file) => {
+    try {
+        applyPreset(JSON.parse(await file.text()))
+    } catch (error) {
+        panel.setPresetStatus(`Could not load ${file.name}: ${error.message}`, true)
+        return
+    }
     panel.setPresetStatus(`Loaded ${file.name}`)
 }
 
@@ -298,11 +341,11 @@ window.onload = () => {
         savePng,
         savePreset,
         loadPreset,
+        changed: markStateChanged,
         clearImage: () => density.clear()
     })
     panel.setSeed(random.seed)
     panel.setCanvasSize(width, height)
-    location.hash = encodeURIComponent(random.seed)
 
     // The panel changed the stage width, so the canvas may need a second pass.
     if (resizeCanvas()) {
@@ -310,8 +353,22 @@ window.onload = () => {
         panel.sync()
     }
 
-    addFocalPoint(Math.round(width/2), Math.round(height/2))
-    spawnParticles()
+    // A state link rebuilds the whole scene; anything else starts from one
+    // centred focal point. A damaged link is not worth refusing to start over.
+    let restored = false
+    if (startup.preset) {
+        try {
+            applyPreset(startup.preset)
+            restored = true
+        } catch (error) {
+            console.warn("Ignoring a damaged state link:", error.message)
+        }
+    }
+    if (!restored) {
+        addFocalPoint(Math.round(width/2), Math.round(height/2))
+        spawnParticles()
+    }
+    writeHash()
 
     mf.addMouseMoveEventListener()
 
@@ -328,6 +385,7 @@ window.onload = () => {
         focal.x = point.x
         focal.y = point.y
         panel.refreshFocalValues()
+        markStateChanged()
     })
 
     window.addEventListener("mouseup", () => {
@@ -367,11 +425,15 @@ window.onload = () => {
                 return
         }
         panel.sync()
+        markStateChanged()
     })
 
     window.requestAnimationFrame(update)
 
     onresize = () => {
-        if (resizeCanvas()) spawnParticles()
+        if (resizeCanvas()) {
+            spawnParticles()
+            markStateChanged()
+        }
     }
 }

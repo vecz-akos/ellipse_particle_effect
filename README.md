@@ -46,7 +46,8 @@ scaled to fit it whole.
   step-curve constants.
 - **Render** — the seed (type one and apply it, or roll a new one), PNG save at
   the current canvas resolution, presets as JSON, and clearing the accumulated
-  image.
+  image. The URL follows the state on its own; the preset file is for keeping
+  one on disk.
 - **Playback** — Phase 5, not built yet.
 
 The four mode toggles sit in a strip at the bottom of the panel, outside the
@@ -87,10 +88,12 @@ so a long run behaves like an exposure with a slowly closing aperture.
 
 ## Seeds
 
-The run is driven by a seeded PRNG, and the seed is in the URL hash — copy the
-link and you get the same image back. `r` rolls a new seed. Reproducibility
-holds for a given canvas resolution, and stops the moment you steer the shape
-with the mouse. Only the seed is in the URL; for everything else use a preset.
+The run is driven by a seeded PRNG, and **the URL hash carries the whole state**
+— the seed, every parameter and the focal points. Copy the link and you get the
+same image back; the address bar updates itself a moment after any change, so
+there is nothing to press first. `r` rolls a new seed. Reproducibility holds for
+a given canvas resolution, and stops the moment you steer the shape with the
+mouse. Links from the older seed-only format still load.
 
 ## Presets
 
@@ -98,8 +101,13 @@ with the mouse. Only the seed is in the URL; for everything else use a preset.
 parameter, and the focal points, together with the canvas size they were placed
 on. **Load…** reads one back: the canvas is resized to the preset's aspect and
 resolution, the figure is scaled into it, and the run restarts from the saved
-seed. Whether the simulation is running and whether a point is following the
-mouse are not saved; everything that shapes the image is.
+seed. Whether the simulation is running, whether a point follows the mouse and
+whether the focal-point crosses are shown are not saved; everything that shapes
+the image is.
+
+The file keeps every field, while the link carries only what differs from the
+defaults — a link is shared and ephemeral, a saved file is what you come back to
+in six months.
 
 ## Documentation
 

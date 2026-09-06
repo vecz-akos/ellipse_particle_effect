@@ -107,8 +107,10 @@ The save format. `capture` collects the seed, the `Params` fields worth keeping,
 the focal points and the canvas size they were placed on into one versioned
 JSON document; `apply` validates a parsed document and writes it back into a
 `Params` and an `NEllipse`, returning the seed and canvas size for `main.js` to
-act on. It touches no DOM and reads no globals, so the same pair will serve the
-URL-hash state when that lands.
+act on. `encode` and `decode` are the same document as a base64url URL hash
+behind a `p1.` marker, with `strip` removing everything the defaults already say
+— one schema for the file and the link, two serialisations of it. It touches no DOM
+and reads no globals.
 
 ### `scripts/main.js`
 

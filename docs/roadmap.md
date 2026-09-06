@@ -72,7 +72,7 @@ export a small preview, then re-render the exact same image at print size.
 
 ---
 
-## Phase 3 — Control panel — **mostly done**
+## Phase 3 — Control panel — **done**
 
 Landed: the docked panel with its three tabs, the `Params` object the panel and
 the keyboard share, every parameter above live-editable, per-point focal weights
@@ -83,8 +83,9 @@ Presets landed too: `scripts/Preset.js` and the Render tab's Presets section
 save and load the whole state as JSON. See "Presets are a JSON file, and the
 file is not trusted" in `docs/decisions.md`.
 
-**Still open in this phase:** the full parameter state in the URL hash — only
-the seed is there, and the preset schema is the obvious thing to encode.
+The URL hash carries the whole state now, encoded with the same schema —
+seed-only links from before still load. See "The URL hash is a preset" in
+`docs/decisions.md`.
 
 The resolution multiplier has **left this phase**. It was going to need
 normalised coordinates, which is now rejected outright — see "Not planned"

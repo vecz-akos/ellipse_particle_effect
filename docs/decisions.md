@@ -26,6 +26,54 @@ Paragraphs, tables, lists.
 
 ---
 
+# The URL hash is a preset
+
+Date: 2026-09-06
+
+The hash used to hold the seed alone, which linked the noise but not the image
+— everything else came from whatever the panel happened to be set to. It now
+holds the whole preset document: `Preset.encode` writes it as base64url behind a
+`p1.` marker, `Preset.decode` reads it back. One schema serves the file and the
+link, so a field added to a preset is in the URL for free.
+
+**Old links keep working.** A hash without the marker is treated as a bare seed,
+exactly as before. The marker is matched as a version pattern, not a literal, so
+a `p2.` link from a future build is *refused with a message* rather than quietly
+run as a nonsense seed — losing an image silently is the worse failure. A hash
+that claims to be a state link and cannot be read (damaged base64, bad percent
+escape, unknown version) is reported to the console and the sketch starts from
+its defaults; it is not a seed either.
+
+**The link carries only what the defaults do not.** `Preset.strip` drops every
+parameter still at its constructor value, and the per-point weights while the
+shared weight is in charge — every point holds it, so they are derived, not
+data. `apply` only touches keys that are present, so a missing key restores its
+default on its own: no schema change and no version bump. Coordinates are
+rounded to two decimals on capture, well below the integer `DensityBuffer.add`
+truncates to. Together that took a four-point link from 844 characters to 322.
+
+**The saved file keeps everything.** One capture, two serialisations. A link is
+shared and ephemeral, so inheriting a later default is fine — arguably right. A
+`.json` preset is long-lived, kept to reproduce an image months later, and a
+default that shifts in a future version would quietly rewrite it. Only the URL
+strips.
+
+**`showFocalPoints` joined `animate` and `followFocalPoint` in `SKIP`.** The
+crosses are a debugging overlay — T9 already kept them out of the exported PNG,
+and someone opening a shared link should not get an image with crosses on it.
+
+**The hash follows the state, but on a timer.** Every panel control reports an
+edit through `Panel.touched`, dragging a focal point and the keyboard shortcuts
+report their own, and each report arms a 400 ms timer that the animation loop
+checks. The write goes through `history.replaceState`, so dragging a slider
+leaves one URL rather than two hundred history entries.
+
+A link runs about 230 characters with one focal point and 450 with eight. Short
+keys or a compressor could shave more, but both mean a second schema to keep in
+step with the file, and neither is worth that.
+
+---
+
 # Presets are a JSON file, and the file is not trusted
 
 Date: 2026-09-06
@@ -34,10 +82,12 @@ Date: 2026-09-06
 and the canvas size the points were placed on, as one JSON document with a
 `version`. The Render tab downloads it and loads it back.
 
-**Two fields do not travel: `animate` and `followFocalPoint`.** They are session
-state, not image state — a preset that pauses the run or hands a focal point to
-the mouse the moment it loads would be surprising, and neither affects what the
-image looks like once it is running.
+**Three fields do not travel: `animate`, `followFocalPoint` and
+`showFocalPoints`.** They are session state, not image state — a preset that
+pauses the run, hands a focal point to the mouse, or drops a debugging overlay
+on the image the moment it loads would be surprising, and none of them affects
+what the image looks like once it is running. (`showFocalPoints` joined them
+with the link-shortening work; see the entry above.)
 
 **The canvas size is saved because the coordinates need it.** Focal points are
 in pixels, so a preset made at 2560×1440 and loaded into a fitted window would

@@ -133,10 +133,21 @@ Rules for all of it:
   **a handler must never call `sync()` back.** `weightChanged` calls the narrow
   `panel.syncWeightControls()` on purpose; widening it to `panel.sync()` looks
   like the more thorough choice and is infinite recursion.
+- **The URL hash is written on a timer, never on every change.** An edit calls
+  `markStateChanged` in `main.js`, which arms a 400 ms delay that the animation
+  loop checks; the write is a `history.replaceState`. Writing `location.hash`
+  directly is what the old seed-only code did — it adds a history entry per
+  change and would fight the state link.
 - **A preset file is untrusted input.** `Preset.apply` validates the whole
   document before writing anything and copies only known keys of matching type.
   Adding a `Params` field is enough for it to travel — but do not loosen the
-  checks, and keep `animate` and `followFocalPoint` out of the file.
+  checks, and keep the `SKIP` fields (`animate`, `followFocalPoint`,
+  `showFocalPoints`) out of it.
+- **One capture, two serialisations.** `Preset.strip` runs for the URL only: a
+  link omits defaults, so it inherits whatever a default becomes later, which is
+  fine for something shared and ephemeral. The `.json` file keeps every field
+  precisely because it does not get to inherit — someone reopens it months on.
+  Do not "unify" the two by stripping the file as well.
 - **Anything the animation loop writes to the DOM has to check first.** Follow
   mode calls `refreshFocalValues` sixty times a second and `draw` looks at the
   recording class every frame, so both go through a changed-value guard

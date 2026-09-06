@@ -73,6 +73,12 @@ export default class Panel {
         }
     }
 
+    // Every control reports that the state moved, so the URL can follow it.
+    // Only user edits reach this; `sync` sets values without firing listeners.
+    touched() {
+        if (this.handlers.changed) this.handlers.changed()
+    }
+
     section(parent, title) {
         const section = el("section", "section")
         section.appendChild(el("h2", null, title))
@@ -108,6 +114,7 @@ export default class Panel {
         input.addEventListener("input", () => {
             write(Number(input.value))
             value.textContent = format(read())
+            this.touched()
             if (change && !commit) change()
         })
         if (change && commit) input.addEventListener("change", () => change())
@@ -130,6 +137,7 @@ export default class Panel {
             const raw = input.value
             const option = options.find(o => String(o.value) === raw)
             write(option ? option.value : raw)
+            this.touched()
             if (change) change()
         })
 
@@ -145,6 +153,7 @@ export default class Panel {
         const sync = () => { input.value = read() }
         input.addEventListener("input", () => {
             write(input.value)
+            this.touched()
             if (change) change()
         })
 
@@ -160,6 +169,7 @@ export default class Panel {
         const sync = () => { input.checked = read() }
         input.addEventListener("change", () => {
             write(input.checked)
+            this.touched()
             if (change) change()
         })
 
@@ -417,6 +427,7 @@ export default class Panel {
                     if (Number.isNaN(value)) return
                     if (key === "weight") this.nEllipse.setWeight(index, value)
                     else point[key] = value
+                    this.touched()
                 })
                 field.appendChild(input)
                 row.appendChild(field)
