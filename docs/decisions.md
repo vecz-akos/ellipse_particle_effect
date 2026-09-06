@@ -26,6 +26,37 @@ Paragraphs, tables, lists.
 
 ---
 
+# Presets are a JSON file, and the file is not trusted
+
+Date: 2026-09-06
+
+`scripts/Preset.js` captures the seed, every `Params` field, the focal points,
+and the canvas size the points were placed on, as one JSON document with a
+`version`. The Render tab downloads it and loads it back.
+
+**Two fields do not travel: `animate` and `followFocalPoint`.** They are session
+state, not image state — a preset that pauses the run or hands a focal point to
+the mouse the moment it loads would be surprising, and neither affects what the
+image looks like once it is running.
+
+**The canvas size is saved because the coordinates need it.** Focal points are
+in pixels, so a preset made at 2560×1440 and loaded into a fitted window would
+put the figure off-screen. Loading resizes the canvas from the preset's aspect
+and resolution first, then scales the figure in with `rescaleFocalPoints` — the
+same path a resolution change takes, so there is one rule for "the canvas
+changed under the figure" rather than two.
+
+**A preset file is user input.** `apply` validates the whole document before
+writing anything, then copies only keys that already exist in `Params` and whose
+type matches, nested objects included; unknown keys, wrong types and malformed
+focal points are dropped. `resolution` is the one field allowed to be either a
+string (`"fit"`) or a number. An empty focal-point list is legitimate — a
+*missing* one means the file is not a preset, and is rejected. Half-applying a
+broken file is worse than refusing it, so nothing is written until every check
+has passed, and the Render tab reports the reason instead of failing silently.
+
+---
+
 # One weight for every focal point, and the end of `baseD`
 
 Date: 2026-09-06

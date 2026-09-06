@@ -357,6 +357,30 @@ export default class Panel {
         output.appendChild(save)
         output.appendChild(el("p", "hint", "Saved at the canvas resolution set on the Parameters tab. Presets and re-render at size are not built yet."))
 
+        const presets = this.section(body, "Presets")
+        const presetField = el("div", "field")
+        const savePreset = el("button", null, "Download")
+        savePreset.addEventListener("click", () => {
+            if (this.handlers.savePreset) this.handlers.savePreset()
+        })
+        const loadPreset = el("button", null, "Load…")
+        // A file input cannot be opened from script without a real click, so the
+        // input stays hidden and the button forwards to it.
+        const file = el("input")
+        file.type = "file"
+        file.accept = "application/json,.json"
+        file.hidden = true
+        file.addEventListener("change", () => {
+            const chosen = file.files[0]
+            file.value = ""
+            if (chosen && this.handlers.loadPreset) this.handlers.loadPreset(chosen)
+        })
+        loadPreset.addEventListener("click", () => file.click())
+        presetField.append(savePreset, loadPreset, file)
+        presets.appendChild(presetField)
+        this.presetStatus = el("p", "hint", "Seed, every parameter and the focal points, as one JSON file.")
+        presets.appendChild(this.presetStatus)
+
         const restart = this.section(body, "Restart")
         const reset = el("button", "wide", "Clear image")
         reset.addEventListener("click", () => {
@@ -442,6 +466,11 @@ export default class Panel {
             setNumber(inputs.weight, point.weight)
         })
         setText(this.targetSumReadout, `Target sum d = ${Math.round(this.nEllipse.d)} px`)
+    }
+
+    setPresetStatus(text, failed=false) {
+        setText(this.presetStatus, text)
+        this.presetStatus.classList.toggle("failed", failed)
     }
 
     setSeed(seed) {

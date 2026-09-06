@@ -20,6 +20,7 @@ edits everything else live.
 | `scripts/Random.js` | the seeded PRNG every random step comes from |
 | `scripts/Params.js` | every tunable in one object, and the canvas sizing rule |
 | `scripts/Panel.js` | the control panel on the right |
+| `scripts/Preset.js` | the JSON save format, and the validation on load |
 | `scripts/main.js` | canvas, animation loop, keyboard controls |
 
 ## Quick start
@@ -44,7 +45,8 @@ scaled to fit it whole.
   the tone map (exposure, gamma, adaptation) and the two colours; and last, the
   step-curve constants.
 - **Render** — the seed (type one and apply it, or roll a new one), PNG save at
-  the current canvas resolution, and clearing the accumulated image.
+  the current canvas resolution, presets as JSON, and clearing the accumulated
+  image.
 - **Playback** — Phase 5, not built yet.
 
 The four mode toggles sit in a strip at the bottom of the panel, outside the
@@ -88,8 +90,16 @@ so a long run behaves like an exposure with a slowly closing aperture.
 The run is driven by a seeded PRNG, and the seed is in the URL hash — copy the
 link and you get the same image back. `r` rolls a new seed. Reproducibility
 holds for a given canvas resolution, and stops the moment you steer the shape
-with the mouse. Only the seed is in the URL — the rest of the parameters are not
-saved yet.
+with the mouse. Only the seed is in the URL; for everything else use a preset.
+
+## Presets
+
+**Download** on the Render tab writes `n-ellipse-<seed>.json` — the seed, every
+parameter, and the focal points, together with the canvas size they were placed
+on. **Load…** reads one back: the canvas is resized to the preset's aspect and
+resolution, the figure is scaled into it, and the run restarts from the saved
+seed. Whether the simulation is running and whether a point is following the
+mouse are not saved; everything that shapes the image is.
 
 ## Documentation
 

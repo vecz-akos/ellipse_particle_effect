@@ -97,15 +97,26 @@ once a look is found: canvas, simulation, focal points, tone map, step curve. It
 rebuilt (canvas geometry, particles, seed). `sync` pulls every control back from
 `Params`, which is how a keyboard shortcut keeps the UI honest;
 `syncFocalPoints` rebuilds the focal-point rows and `refreshFocalValues` follows
-a drag.
+a drag. `sync` is the whole contract for a `Params` written from outside: values,
+the weight slider's range, the clamped `sharedWeight`, and which weight editor is
+live.
+
+### `scripts/Preset.js`
+
+The save format. `capture` collects the seed, the `Params` fields worth keeping,
+the focal points and the canvas size they were placed on into one versioned
+JSON document; `apply` validates a parsed document and writes it back into a
+`Params` and an `NEllipse`, returning the seed and canvas size for `main.js` to
+act on. It touches no DOM and reads no globals, so the same pair will serve the
+URL-hash state when that lands.
 
 ### `scripts/main.js`
 
 The application. Owns the canvas and its 2D context, the density buffer and its
 `ImageData`, the single `Random` instance and the seed (read from and written to
 the URL hash by `applySeed`), the particle array, the single `NEllipse`, `Params`
-and `Panel` instances, the keyboard bindings, focal-point dragging, PNG export,
-and the resize handler. `resizeCanvas` and `spawnParticles` are the two rebuild
+and `Panel` instances, the keyboard bindings, focal-point dragging, PNG and
+preset export, and the resize handler. `resizeCanvas` and `spawnParticles` are the two rebuild
 steps the panel triggers. `particleCorrection` recycles particles that have
 drifted several canvases away back to a random on-canvas position.
 

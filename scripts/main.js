@@ -6,6 +6,7 @@ import DensityBuffer from "./DensityBuffer.js";
 import Random from "./Random.js";
 import Params from "./Params.js";
 import Panel from "./Panel.js";
+import Preset from "./Preset.js";
 
 const canvas = document.querySelector('canvas'),
     stage = document.querySelector('.stage'),
@@ -211,13 +212,45 @@ const savePng = () => {
     target.height = height
     target.getContext("2d").putImageData(imageData, 0, 0)
 
-    target.toBlob((blob) => {
-        const link = document.createElement("a")
-        link.href = URL.createObjectURL(blob)
-        link.download = `n-ellipse-${random.seed}-${width}x${height}.png`
-        link.click()
-        setTimeout(() => URL.revokeObjectURL(link.href), 10_000)
-    })
+    target.toBlob((blob) => download(blob, `n-ellipse-${random.seed}-${width}x${height}.png`))
+}
+
+const download = (blob, name) => {
+    const link = document.createElement("a")
+    link.href = URL.createObjectURL(blob)
+    link.download = name
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(link.href), 10_000)
+}
+
+const savePreset = () => {
+    const preset = Preset.capture(params, nEllipse, random.seed, width, height)
+    download(new Blob([JSON.stringify(preset, null, 2)], { type: "application/json" }),
+        `n-ellipse-${random.seed}.json`)
+    panel.setPresetStatus(`Saved as n-ellipse-${random.seed}.json`)
+}
+
+// The file comes from the user, so everything here can fail: Preset.apply
+// validates the contents, and the status line reports whatever went wrong.
+const loadPreset = async (file) => {
+    let preset
+    try {
+        preset = Preset.apply(JSON.parse(await file.text()), params, nEllipse)
+    } catch (error) {
+        panel.setPresetStatus(`Could not load ${file.name}: ${error.message}`, true)
+        return
+    }
+
+    // The preset carries its own aspect and resolution, and coordinates that
+    // belong to the canvas it was made on — so resize first, then scale the
+    // figure in, exactly as a resolution change does.
+    resizeCanvas()
+    if (preset.width && preset.height) rescaleFocalPoints(preset.width, preset.height)
+    applyDefaultWeight()
+    panel.syncFocalPoints()
+    panel.sync()
+    applySeed(preset.seed || random.seed)
+    panel.setPresetStatus(`Loaded ${file.name}`)
 }
 
 // Dragging a focal point: nearest one within a fixed screen-space radius.
@@ -263,6 +296,8 @@ window.onload = () => {
         seedChanged: (seed) => applySeed(seed),
         seedRolled: () => applySeed(Random.randomSeed()),
         savePng,
+        savePreset,
+        loadPreset,
         clearImage: () => density.clear()
     })
     panel.setSeed(random.seed)

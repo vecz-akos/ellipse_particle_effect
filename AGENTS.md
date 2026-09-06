@@ -133,6 +133,10 @@ Rules for all of it:
   **a handler must never call `sync()` back.** `weightChanged` calls the narrow
   `panel.syncWeightControls()` on purpose; widening it to `panel.sync()` looks
   like the more thorough choice and is infinite recursion.
+- **A preset file is untrusted input.** `Preset.apply` validates the whole
+  document before writing anything and copies only known keys of matching type.
+  Adding a `Params` field is enough for it to travel — but do not loosen the
+  checks, and keep `animate` and `followFocalPoint` out of the file.
 - **Anything the animation loop writes to the DOM has to check first.** Follow
   mode calls `refreshFocalValues` sixty times a second and `draw` looks at the
   recording class every frame, so both go through a changed-value guard

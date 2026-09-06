@@ -169,6 +169,10 @@ canvas.recording {
     font-variant-numeric: tabular-nums;
 }
 
+.hint.failed {
+    color: #e5675c;
+}
+
 /* Inputs */
 
 input, select, button {

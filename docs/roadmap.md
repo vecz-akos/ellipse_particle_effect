@@ -79,12 +79,17 @@ the keyboard share, every parameter above live-editable, per-point focal weights
 and canvas dragging, the aspect/resolution dropdowns, and PNG save. See "Control
 panel, and the canvas as a render target" in `docs/decisions.md`.
 
-**Still open in this phase:** presets as JSON, the full parameter state in the
-URL hash (only the seed is there), and the resolution multiplier / re-render at
-size. The last one needs a decision first — a seed is only reproducible at a
-fixed resolution while the simulation works in pixels, so a true "re-render this
-image bigger" means moving to normalised coordinates and accepting that the
-tuned step constants change meaning.
+Presets landed too: `scripts/Preset.js` and the Render tab's Presets section
+save and load the whole state as JSON. See "Presets are a JSON file, and the
+file is not trusted" in `docs/decisions.md`.
+
+**Still open in this phase:** the full parameter state in the URL hash — only
+the seed is there, and the preset schema is the obvious thing to encode.
+
+The resolution multiplier has **left this phase**. It was going to need
+normalised coordinates, which is now rejected outright — see "Not planned"
+below. The output-size problem it was meant to solve is real and stays on the
+list as Phase 6, by a route that does not touch the tuned constants.
 
 The original plan follows, for context.
 
@@ -158,6 +163,60 @@ only for export.
 
 ---
 
+## Phase 6 — Supersampled export at print size
+
+The largest image you can keep today is your screen. That is the real
+limitation behind what used to be called the "resolution multiplier", and it
+has nothing to do with making the simulation resolution-independent.
+
+**The route.** Render the same figure at `N` times the linear pixel density and
+scale the step curve so every length grows by the same factor. Because the step
+length must scale by `N` when the error does, the three constants do **not** all
+take the same multiplier:
+
+| constant | multiplier |
+| --- | --- |
+| `step.offset` | × N |
+| `step.scale` | × √N |
+| `step.bias` | × N |
+
+That is an identity, not an approximation:
+
+```
+√(N·e + N·offset) · (√N · scale) − N·bias
+    = √N · √(e + offset) · √N · scale − N·bias
+    = N · (√(e + offset) · scale − bias)
+```
+
+So the geometry, the relative line widths and the width of the freezing band
+around the curve all come out unchanged — the same picture, on more pixels.
+Multiplying all three constants by `N` instead — the intuitive guess, and the
+first version proposed — overshoots the step length by a factor of `√N` and
+smears the image. Check the identity above before trusting any variant of these
+multipliers.
+
+At `N = 1` every constant is its current value, so nothing about today's look or
+about `Params` changes. This is three multiplications applied to a copy of the
+step curve at export time, not an architectural change.
+
+**The cost, which is the reason this is an offline export and not a mode.** At
+`N` times the linear resolution the canvas has `N²` times the area, so it needs
+roughly `N²` times the samples to reach the same density — four times the
+resolution is sixteen times the work. It runs for minutes and produces a file;
+it does not run at sixty frames a second.
+
+That makes it a natural neighbour of Phase 5's deterministic export mode (a
+fixed number of simulation steps per frame rather than real time), and the two
+should probably share whatever offscreen render loop gets written first.
+
+**Still open.** Whether the particle count scales with `N²` or the run simply
+accumulates for longer — the first keeps the run length constant, the second
+keeps the RNG stream comparable to the on-screen run. Neither reproduces an
+on-screen image pixel for pixel, and neither needs to: this renders the same
+*figure* at a larger size, which is what the use case actually wants.
+
+---
+
 ## Not planned
 
 - **A real simulated-annealing implementation.** The name is historical; a
@@ -165,3 +224,11 @@ only for export.
   `docs/decisions.md`.
 - **A framework for the canvas layer.** The simulation stays plain ES modules
   and typed arrays.
+- **Normalised (0–1) coordinates for the simulation.** Proposed as the way to
+  make a seed reproducible at any resolution, and rejected. The `step` constants
+  are hand-tuned and mean something *in pixels*; moving to a unit square does not
+  generalise them, it destroys their meaning and restarts the tuning on a scale
+  nobody has any intuition for — and `AGENTS.md` protects those constants
+  precisely because the look depends on them. The universality it buys has no
+  use case here: this is a sketch that draws on a canvas, not a geometry library.
+  Phase 6 solves the output-size problem instead, without touching them.
