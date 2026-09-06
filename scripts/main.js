@@ -2,6 +2,7 @@ import NEllipse from "./NEllipse.js";
 import Particle from "./Particle.js";
 import Point from "./Point.js";
 import MouseFollower from "./MouseFollower.js";
+import DensityBuffer from "./DensityBuffer.js";
 
 const canvas = document.querySelector('canvas'),
     ctx = canvas.getContext("2d")
@@ -10,12 +11,22 @@ let width = canvas.width = window.innerWidth,
     height = canvas.height = window.innerHeight,
     backgroundColor = "#ffffff",
     foregroundColor = "#000000",
+    exposure = .9,
+    gamma = .5,
     frame = 0,
     animate = true,
     clearCanvas = true,
-    record = false,
     showFocalPoints = false,
     followFocalPoint = false;
+
+const density = new DensityBuffer(width, height)
+let imageData = ctx.createImageData(width, height)
+
+const rgb = (hex) => [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16)
+]
 
 const nEllipse = new NEllipse(Math.round(Math.min(width, height)*(1/3)))
 nEllipse.addFocalPoint(new Point(Math.round(width/2), Math.round(height/2)), 0)
@@ -27,6 +38,9 @@ let particles = []
 const init = () => {
     width = canvas.width = window.innerWidth
     height = canvas.height = window.innerHeight
+
+    density.resize(width, height)
+    imageData = ctx.createImageData(width, height)
 
     particles = []
     for (let i = 0; i < 20_000; i++) {
@@ -54,20 +68,19 @@ const update = () => {
 
 const draw = () => {
     if (animate) {
-        if (clearCanvas || !record) {
-            ctx.fillStyle = backgroundColor
-            ctx.fillRect(0, 0, width, height)
-            if (!clearCanvas || record) record = !record
+        if (clearCanvas) density.clear()
+
+        for (let p of particles) {
+            density.add(p.x, p.y)
         }
 
-        ctx.fillStyle = foregroundColor + (record ? "16" : "44") // colorcode + alpha
-        particles.forEach((p) => {
-            if (p.x > 0 && p.x < width && p.y > 0 && p.y < height) {
-                ctx.beginPath()
-                ctx.arc(p.x, p.y, .5, 0, Math.PI*2, true)
-                ctx.fill()
-            }
+        density.render(imageData, {
+            exposure,
+            gamma,
+            background: rgb(backgroundColor),
+            foreground: rgb(foregroundColor)
         })
+        ctx.putImageData(imageData, 0, 0)
     }
 
     if (showFocalPoints) {

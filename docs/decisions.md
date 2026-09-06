@@ -26,6 +26,44 @@ Paragraphs, tables, lists.
 
 ---
 
+# The density buffer, and the fade that came with it
+
+Date: 2026-09-06
+
+Roadmap Phase 1. `draw` no longer draws: it increments a `Float32Array` of
+`width * height` hit counts (`DensityBuffer`) and blits one `ImageData` per
+frame. This supersedes the per-particle `beginPath` / `arc` / `fill` at alpha
+`44` / `16`, and with it the `record` flag — brightness is now `exposure` and
+`gamma` in `main.js`. Real-time rendering got dramatically faster, as expected:
+the per-particle cost is one array write.
+
+**Tone map.** `log1p(density * exposure)`, normalised to a white point, then
+`pow(t, 1/gamma)`, then a lerp from the background to the foreground colour.
+Values around `exposure = .9`, `gamma = .5` were the first ones that looked
+right; treat them as a starting point, not a result.
+
+**The white point is adaptive, and that is what makes old traces fade.** It is
+not the raw running maximum but a value that lags it
+(`whitePoint += (max - whitePoint) * adaptation`). The lag was added for a
+narrow reason: in per-frame mode the frame maximum jumps around and normalising
+by it flickers.
+
+The interesting consequence was unplanned. In accumulating mode nothing in the
+buffer ever decreases, but the white point keeps rising as the densest region
+grows, so every *older*, no-longer-fed region gets quieter relative to it. The
+image behaves like a long exposure with a slowly closing aperture: shapes the
+focal points only visited briefly sink back into the background, while the ones
+still being fed stay bright. This reads as motion in a way the old fixed-alpha
+accumulation never did, so it stays.
+
+Knobs, if it ever needs taming: `adaptation` (lower = slower fade), or dropping
+the normalisation entirely for a fixed white point (no fade at all, and
+per-frame mode goes back to flickering).
+
+**Resize keeps the image.** `DensityBuffer.resize` copies the overlapping
+region row by row. The particles are still reallocated by `init` — only the
+accumulated density survives.
+
 # Dependencies stay minimal
 
 Date: 2026-09-06

@@ -20,7 +20,7 @@ different is a regression.
 index.html            Vite entry point; holds the whole (tiny) stylesheet inline
 vite.config.js        one setting: base "./" so builds open from the filesystem
 scripts/              the sketch — one class per file, default-exported
-docs/                 architecture and the decision log
+docs/                 architecture, the decision log, and the roadmap
 ../imgs/              reference renders, hand-edited outside this repo (not tracked here)
 ```
 
@@ -30,6 +30,7 @@ docs/                 architecture and the decision log
 | --- | --- |
 | Why something is the way it is; what was tried and broke | `docs/decisions.md` |
 | What a component is, what it owns, how pieces connect | `docs/architecture.md` |
+| Planned work, in dependency order | `docs/roadmap.md` |
 | How to run or build the project | `README.md` |
 | A rule an agent must not break | this file, in one or two sentences |
 
@@ -71,9 +72,10 @@ Rules for all of it:
   acceptance, no cooling schedule. Adding a real one would kill the effect,
   because the system is supposed to never converge. Full explanation in
   `docs/decisions.md`.
-- **The `record` flag toggling itself inside `draw` is intentional**, not a
-  stray assignment. It is how the accumulating low-alpha mode gets exactly one
-  background fill after `clearCanvas` is switched off.
+- **The image is the density buffer, not the canvas.** `draw` writes no shapes:
+  it accumulates hits into `DensityBuffer` and blits one `ImageData`. The old
+  `record` flag and the per-particle alpha are gone — brightness is `exposure`
+  and `gamma` now.
 - **`particleCorrection` uses a tolerance of three screens.** Particles far off
   canvas are still part of the simulation; recycling them sooner tightens the
   image visibly.
@@ -84,8 +86,8 @@ Rules for all of it:
   `removeEventListener` needs the same function reference — passing a fresh
   arrow function silently removes nothing. This was a real bug; do not inline it
   back.
-- Resizing the window reallocates every particle and wipes the accumulated
-  image. That is current behaviour, not a bug report waiting to happen.
+- Resizing the window reallocates every particle; the accumulated density
+  survives, because `DensityBuffer.resize` copies the overlapping region.
 - `correctionCounter` in `update` is accumulated and unused. It is a debug hook
   left in place deliberately; a linter will flag it.
 

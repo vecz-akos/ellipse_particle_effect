@@ -42,11 +42,23 @@ velocity and no memory between frames.
 Caches the last `mousemove` position. Holds its bound listener in `handler` so
 `removeMouseMoveEventListener` can actually detach it.
 
+### `scripts/DensityBuffer.js`
+
+The image. A `Float32Array` of `width * height` hit counts: `add(x, y)`
+increments one cell and tracks the running maximum, `clear` zeroes it, `resize`
+reallocates while copying the overlapping region so the accumulated image
+survives a window resize. `render` maps density to colour into an `ImageData` —
+`log1p(density * exposure)` normalised to a white point that lags the running
+maximum (so the per-frame mode does not flicker), then a gamma curve, then a
+lerp between the background and foreground colour. It knows nothing about
+particles or the canvas; `main.js` does the `putImageData`.
+
 ### `scripts/main.js`
 
-The application. Owns the canvas and its 2D context, the particle array, the
-single `NEllipse` instance, all the toggle flags (`animate`, `clearCanvas`,
-`record`, `showFocalPoints`, `followFocalPoint`), the keyboard bindings, and the
+The application. Owns the canvas and its 2D context, the density buffer and its
+`ImageData`, the particle array, the single `NEllipse` instance, all the toggle
+flags (`animate`, `clearCanvas`, `showFocalPoints`, `followFocalPoint`) and the
+tone-map parameters (`exposure`, `gamma`), the keyboard bindings, and the
 resize handler. `particleCorrection` recycles particles that have drifted
 several screens away back to a random on-screen position.
 
@@ -67,20 +79,23 @@ requestAnimationFrame
        │     particle steps by f(error) in a random direction   ← Particle
        │     particleCorrection(particle)              ← recycle if far off-screen
        └─ draw()
-            ├─ clearCanvas || !record ? fill background
-            ├─ fill each on-screen particle at alpha 44 (live) or 16 (accumulating)
+            ├─ clearCanvas ? density.clear()
+            ├─ density.add(x, y) for each particle    ← DensityBuffer
+            ├─ density.render(imageData) + putImageData
             └─ showFocalPoints ? stroke a cross at each focus
 ```
 
 Resize cancels the pending frame, re-runs `init` (which reallocates every
-particle at a random position) and restarts the loop — so resizing discards any
-accumulated image.
+particle at a random position, and resizes the density buffer) and restarts the
+loop. The accumulated density survives the resize; the particles do not.
 
-## What is deliberately absent
+## What is absent today
 
-- **No off-screen buffer.** The accumulated image lives only in the visible
-  canvas; there is no export path yet, screenshots are taken by hand.
+All three of these are planned; see `docs/roadmap.md` for the order and the
+reasoning.
+
+- **No export path.** The density buffer holds the image, but there is no way to
+  save it at a different resolution; screenshots are taken by hand.
 - **No post-processing.** The colour grading, bloom, vignette and grain in the
   reference images under `../imgs/` were applied afterwards in an image editor.
-  Bringing them in-app is the next planned step.
 - **No UI.** Every control is a single keypress; see `README.md`.
