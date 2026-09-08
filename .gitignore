@@ -1,6 +1,7 @@
 node_modules/
 dist/
 
-# The live agent task queue is transient; docs/agent-message.template.md is the
-# tracked skeleton it is copied from.
-docs/agent-message.md
+# The live task queue is transient scaffolding. The archive of landed tasks and
+# the format skeleton are tracked: docs/task-list.archive.md keeps the record of
+# what was asked and what was forbidden, docs/task-list.template.md the shape.
+docs/task-list.md

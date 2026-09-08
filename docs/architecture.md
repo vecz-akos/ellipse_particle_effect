@@ -213,6 +213,6 @@ All of these are planned; see `docs/roadmap.md` for the order and the reasoning.
 - **No cheap preview.** Phase 4 landed whole, and bloom costs 23 ms a frame at
   1080p and 78 ms at 4K on the machine it was written on. Tuning a look at 4K is
   not interactive; splitting a reduced-resolution preview from a full-quality
-  export is the open question, measured under T19 in `docs/agent-message.md`.
+  export is the open question, measured under T19 in `docs/task-list.md`.
 - **No animation.** Focal points move only when dragged; paths, a timeline and
   timelapse export are Phase 5.

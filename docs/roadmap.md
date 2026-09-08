@@ -190,7 +190,7 @@ first for a reason the effects below depend on: bloom takes its colour from the
 middle of the ramp, so there has to be a ramp before a halo is worth looking at.
 
 The remaining order is **4.1 colormap, 4.2 vignette + grain, 4.3 bloom, 4.4
-measure** — broken into T16–T19 in `docs/agent-message.md`.
+measure** — broken into T16–T19 in `docs/task-list.md` and its archive.
 
 ### Traps worth knowing before starting
 
