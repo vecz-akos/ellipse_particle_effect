@@ -28,14 +28,20 @@ export default class Params {
             { at: 1, color: "#000000" }
         ]
 
+        // bloom runs before the tone map, on the density itself
+        this.bloom = { enabled: false, radius: 24, strength: .7, threshold: .3 }
+
         // post-process, in the order it is applied: both off by default, and
         // while they are off no pass over the pixels runs at all.
         this.vignette = { enabled: false, amount: .5, radius: .6, softness: .5 }
-        this.grain = { enabled: false, amount: .06, mono: true, animated: false }
+        this.grain = { enabled: false, amount: .15, size: 1, coverage: .4, mono: true }
 
-        // toggles
-        this.animate = true
-        this.clearCanvas = true
+        // exposing: the image is being fed — particles step and their hits are
+        // counted. Stopping it freezes the picture, not the app; the look can
+        // still be graded. accumulate: the exposure builds up instead of being
+        // drawn fresh every frame.
+        this.exposing = true
+        this.accumulate = false
         this.showFocalPoints = false
         this.followFocalPoint = false
     }

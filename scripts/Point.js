@@ -5,12 +5,12 @@ export default class Point {
     }
 
     distance(obj) {
-        return Math.abs(Math.sqrt(this.dummyDistance(obj)))
+        return Math.sqrt(this.dummyDistance(obj))
     }
 
     dummyDistance(obj=new Point()) {
-		const dx = this.x - obj.x;
-		const dy = this.y - obj.y;
-		return dx * dx + dy * dy;
+        const dx = this.x - obj.x,
+            dy = this.y - obj.y
+        return dx*dx + dy*dy
     }
 }

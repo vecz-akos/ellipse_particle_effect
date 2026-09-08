@@ -11,7 +11,7 @@ const LINK = /^p(\d+)\./
 
 // Session state, not image state: a preset should not pause the run, hand a
 // focal point to the mouse, or drop a debugging overlay on a shared image.
-const SKIP = new Set(["animate", "followFocalPoint", "showFocalPoints"])
+const SKIP = new Set(["exposing", "followFocalPoint", "showFocalPoints"])
 
 // Pixel positions at full double precision are sixteen digits of noise —
 // DensityBuffer.add truncates to an integer anyway.

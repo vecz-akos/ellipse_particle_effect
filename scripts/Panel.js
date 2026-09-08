@@ -19,6 +19,9 @@ const setText = (node, text) => {
     if (node.textContent !== text) node.textContent = text
 }
 
+// Slider labels for the fractional settings.
+const fixed = (places) => (value) => value.toFixed(places)
+
 // Parameters shapes the simulation, Look turns density into a picture — the
 // usual workflow is to draw an image first and grade it afterwards, so Look
 // comes right after Parameters. See Phase 4 in docs/roadmap.md.
@@ -169,7 +172,7 @@ export default class Panel {
         return input
     }
 
-    toggle(parent, label, { read, write, change, hint, compact=false }) {
+    toggle(parent, label, { read, write, change, hint }) {
         const input = el("input")
         input.type = "checkbox"
         const sync = () => { input.checked = read() }
@@ -179,25 +182,45 @@ export default class Panel {
             if (change) change()
         })
 
-        if (compact) {
-            const row = el("label", "mode")
-            if (hint) row.title = hint
-            row.append(input, el("span", null, label))
-            parent.appendChild(row)
-        } else {
-            const row = this.row(parent, label, input)
-            if (hint) row.title = hint
-        }
+        const row = this.row(parent, label, input)
+        if (hint) row.title = hint
 
         this.controls.push(sync)
         sync()
         return input
     }
 
+    // A toggle that carries its own label instead of sitting in a labelled row:
+    // for the footer, where the controls are named by what they do and a lit
+    // button says more than a tick box.
+    // `label` may be a function of the current value, for a control whose name
+    // is its state.
+    toggleButton(parent, label, { read, write, className="", hint, change }) {
+        const button = el("button", `toggle ${className}`.trim())
+        if (hint) button.title = hint
+
+        const sync = () => {
+            const on = read()
+            setText(button, typeof label === "function" ? label(on) : label)
+            button.classList.toggle("active", on)
+        }
+        button.addEventListener("click", () => {
+            write(!read())
+            this.touched()
+            sync()
+            if (change) change()
+        })
+
+        parent.appendChild(button)
+        this.controls.push(sync)
+        sync()
+        return button
+    }
+
     buildParameters() {
         const body = this.tabBodies.parameters,
             params = this.params,
-            { canvasChanged, countChanged } = this.handlers
+            { canvasChanged, countChanged, weightChanged } = this.handlers
 
         const canvas = this.section(body, "Canvas")
         this.select(canvas, "Aspect", {
@@ -232,7 +255,6 @@ export default class Panel {
         })
 
         const focal = this.section(body, "Focal points")
-        const { weightChanged } = this.handlers
         this.toggle(focal, "Manual", {
             read: () => params.manualWeight,
             write: (v) => params.manualWeight = v,
@@ -288,36 +310,61 @@ export default class Panel {
         defaults.appendChild(el("p", "hint", "Every parameter back to its startup value, and one centred focal point. The seed is kept."))
     }
 
-    // Everything between the density buffer and the pixels on screen. None of it
-    // touches the simulation, so an image can be graded long after it was drawn;
-    // bloom, vignette, grain and the gradient colormap land here too.
+    // Everything between the density buffer and the pixels on screen, in the
+    // order it is applied. None of it touches the simulation, so an image can be
+    // graded long after it was drawn; bloom lands here too.
     buildLook() {
         const body = this.tabBodies.look,
             params = this.params
+
+        const bloom = this.section(body, "Bloom")
+        this.toggle(bloom, "Enabled", {
+            read: () => params.bloom.enabled,
+            write: (v) => params.bloom.enabled = v
+        })
+        this.slider(bloom, "Radius", {
+            read: () => params.bloom.radius,
+            write: (v) => params.bloom.radius = v,
+            min: 2, max: 128, step: 1,
+            format: (v) => `${v} px`
+        })
+        this.slider(bloom, "Strength", {
+            read: () => params.bloom.strength,
+            write: (v) => params.bloom.strength = v,
+            min: 0, max: 2, step: .05,
+            format: fixed(2)
+        })
+        this.slider(bloom, "Threshold", {
+            read: () => params.bloom.threshold,
+            write: (v) => params.bloom.threshold = v,
+            min: 0, max: 1, step: .01,
+            format: fixed(2)
+        })
+        bloom.appendChild(el("p", "hint", "Blurs the density itself, before the tone map, so the halo takes its colour from the middle of the ramp."))
 
         const tone = this.section(body, "Tone map")
         this.slider(tone, "Exposure", {
             read: () => params.exposure,
             write: (v) => params.exposure = v,
             min: .05, max: 4, step: .05,
-            format: (v) => v.toFixed(2)
+            format: fixed(2)
         })
         this.slider(tone, "Gamma", {
             read: () => params.gamma,
             write: (v) => params.gamma = v,
             min: .1, max: 4, step: .05,
-            format: (v) => v.toFixed(2)
+            format: fixed(2)
         })
         this.slider(tone, "Adaptation", {
             read: () => params.adaptation,
             write: (v) => params.adaptation = v,
             min: .01, max: 1, step: .01,
-            format: (v) => v.toFixed(2)
+            format: fixed(2)
         })
-        tone.appendChild(el("p", "hint", "The look is applied to the accumulated image on every frame — nothing here restarts the run."))
+        tone.appendChild(el("p", "hint", "The look is applied to whatever the image already holds — grade it with the exposure paused."))
 
         const ramp = this.section(body, "Colours")
-        this.stopList = el("div", "focal-list")
+        this.stopList = el("div", "stop-list")
         ramp.appendChild(this.stopList)
         const addStop = el("button", "wide", "Add stop")
         addStop.addEventListener("click", () => this.addGradientStop())
@@ -334,19 +381,19 @@ export default class Panel {
             read: () => params.vignette.amount,
             write: (v) => params.vignette.amount = v,
             min: 0, max: 1, step: .01,
-            format: (v) => v.toFixed(2)
+            format: fixed(2)
         })
         this.slider(vignette, "Radius", {
             read: () => params.vignette.radius,
             write: (v) => params.vignette.radius = v,
             min: 0, max: 1, step: .01,
-            format: (v) => v.toFixed(2)
+            format: fixed(2)
         })
         this.slider(vignette, "Softness", {
             read: () => params.vignette.softness,
             write: (v) => params.vignette.softness = v,
             min: .01, max: 1, step: .01,
-            format: (v) => v.toFixed(2)
+            format: fixed(2)
         })
 
         vignette.appendChild(el("p", "hint", "The edge fades towards the ramp's colour at 0, not towards black."))
@@ -359,58 +406,77 @@ export default class Panel {
         this.slider(grain, "Amount", {
             read: () => params.grain.amount,
             write: (v) => params.grain.amount = v,
-            min: 0, max: .5, step: .005,
-            format: (v) => v.toFixed(3)
+            min: 0, max: 1, step: .01,
+            format: fixed(2)
+        })
+        this.slider(grain, "Size", {
+            read: () => params.grain.size,
+            write: (v) => params.grain.size = v,
+            min: 1, max: 4, step: 1,
+            format: (v) => `${v} px`
+        })
+        this.slider(grain, "Coverage", {
+            read: () => params.grain.coverage,
+            write: (v) => params.grain.coverage = v,
+            min: .02, max: 1, step: .02,
+            format: fixed(2)
         })
         this.toggle(grain, "Monochrome", {
             read: () => params.grain.mono,
             write: (v) => params.grain.mono = v,
             hint: "Off: each channel gets its own noise, which reads as colour speckle."
         })
-        this.toggle(grain, "Animated", {
-            read: () => params.grain.animated,
-            write: (v) => params.grain.animated = v,
-            hint: "Off: the grain is a still texture. On: it moves every frame."
-        })
-
-        const effects = this.section(body, "Effects")
-        effects.appendChild(el("p", "hint", "Bloom is the rest of Phase 4 — see docs/roadmap.md."))
+        grain.appendChild(el("p", "hint", "Coverage is how much of the frame gets a speck at all. Grain follows the image — the empty canvas stays clean."))
     }
 
-    // The modes live in a footer, outside the tabs: they are the things a
+    // The run controls live in a footer, outside the tabs: they are the things a
     // keyboard shortcut flips, so they stay visible whichever tab is open.
     buildModes() {
         const params = this.params
         const footer = el("div", "panel-footer")
-        footer.appendChild(el("h2", null, "Modes"))
+        footer.appendChild(el("h2", null, "Exposure"))
 
-        const grid = el("div", "modes")
-        this.toggle(grid, "Animate", {
-            read: () => params.animate,
-            write: (v) => params.animate = v,
-            hint: "Pause or resume the simulation (space)",
-            compact: true
+        const run = el("div", "modes")
+        // The pause button is named for what pressing it does; the mode button
+        // is named for the state it is in, which is why only that one lights up.
+        this.toggleButton(run, (on) => on ? "Pause" : "Resume", {
+            read: () => params.exposing,
+            write: (v) => params.exposing = v,
+            className: "primary",
+            hint: "Stop feeding the image; the look stays live (space)"
         })
-        this.toggle(grid, "Clear (c)", {
-            read: () => params.clearCanvas,
-            write: (v) => params.clearCanvas = v,
-            hint: "Clear the buffer each frame; off means the image accumulates (c)",
-            compact: true
+        this.toggleButton(run, (on) => on ? "Exposure" : "Live", {
+            read: () => params.accumulate,
+            write: (v) => params.accumulate = v,
+            className: "mode",
+            hint: "Live draws each frame afresh; Exposure keeps what has been drawn (c)"
         })
-        this.toggle(grid, "Foci (s)", {
+        footer.appendChild(run)
+
+        // Starting over is two clicks on the mode button (Live throws the buffer
+        // away on the next frame, Exposure starts collecting again), so the
+        // button below would be a third way to do the same thing. Kept in case
+        // it is wanted back.
+        // const newExposure = el("button", null, "New exposure")
+        // newExposure.title = "Throw away the image and start collecting again"
+        // newExposure.addEventListener("click", () => {
+        //     if (this.handlers.clearImage) this.handlers.clearImage()
+        // })
+        // run.appendChild(newExposure)
+
+        const overlays = el("div", "modes")
+        this.toggleButton(overlays, "Foci (s)", {
             read: () => params.showFocalPoints,
             write: (v) => params.showFocalPoints = v,
-            hint: "Show a cross at each focal point (s)",
-            compact: true
+            hint: "Show a cross at each focal point (s)"
         })
-        this.toggle(grid, "Follow (f)", {
+        this.toggleButton(overlays, "Follow (f)", {
             read: () => params.followFocalPoint,
             write: (v) => params.followFocalPoint = v,
-            hint: "The newest focal point follows the mouse (f)",
-            compact: true
+            hint: "The newest focal point follows the mouse while the exposure runs (f)"
         })
 
-        footer.appendChild(grid)
+        footer.appendChild(overlays)
         this.root.appendChild(footer)
     }
 
@@ -432,7 +498,7 @@ export default class Panel {
         })
         field.append(this.seedInput, apply, roll)
         seed.appendChild(field)
-        seed.appendChild(el("p", "hint", "The seed is also in the URL hash — copy the link to keep an image."))
+        seed.appendChild(el("p", "hint", "The URL hash carries the whole state — copy the link to keep an image."))
 
         const output = this.section(body, "Output")
         const save = el("button", "wide", "Save PNG")
@@ -440,7 +506,7 @@ export default class Panel {
             if (this.handlers.savePng) this.handlers.savePng()
         })
         output.appendChild(save)
-        output.appendChild(el("p", "hint", "Saved at the canvas resolution set on the Parameters tab. Presets and re-render at size are not built yet."))
+        output.appendChild(el("p", "hint", "Saved at the canvas resolution set on the Parameters tab, with the look applied. Re-render at print size is Phase 6."))
 
         const presets = this.section(body, "Presets")
         const presetField = el("div", "field")
@@ -465,13 +531,6 @@ export default class Panel {
         presets.appendChild(presetField)
         this.presetStatus = el("p", "hint", "Seed, every parameter and the focal points, as one JSON file.")
         presets.appendChild(this.presetStatus)
-
-        const restart = this.section(body, "Restart")
-        const reset = el("button", "wide", "Clear image")
-        reset.addEventListener("click", () => {
-            if (this.handlers.clearImage) this.handlers.clearImage()
-        })
-        restart.appendChild(reset)
     }
 
     buildPlayback() {

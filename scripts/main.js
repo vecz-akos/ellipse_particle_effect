@@ -1,14 +1,15 @@
-import NEllipse from "./NEllipse.js";
-import Particle from "./Particle.js";
-import FocalPoint from "./FocalPoint.js";
-import MouseFollower from "./MouseFollower.js";
-import DensityBuffer from "./DensityBuffer.js";
-import Random from "./Random.js";
-import Params from "./Params.js";
-import Panel from "./Panel.js";
-import Preset from "./Preset.js";
-import Gradient from "./Gradient.js";
-import PostProcess from "./PostProcess.js";
+import NEllipse from "./NEllipse.js"
+import Particle from "./Particle.js"
+import FocalPoint from "./FocalPoint.js"
+import MouseFollower from "./MouseFollower.js"
+import DensityBuffer from "./DensityBuffer.js"
+import Random from "./Random.js"
+import Params from "./Params.js"
+import Panel from "./Panel.js"
+import Preset from "./Preset.js"
+import Gradient from "./Gradient.js"
+import PostProcess from "./PostProcess.js"
+import Bloom from "./Bloom.js"
 
 const canvas = document.querySelector('canvas'),
     stage = document.querySelector('.stage'),
@@ -18,6 +19,7 @@ const params = new Params()
 const density = new DensityBuffer(1, 1)
 const nEllipse = new NEllipse(0)
 const post = new PostProcess()
+const bloom = new Bloom()
 const mf = new MouseFollower()
 
 // The URL hash carries the whole state, so a run can be linked and replayed.
@@ -48,7 +50,15 @@ let width = 1,
     particles = [],
     panel = null,
     dragging = -1,
-    recording = false
+    // What the canvas frame currently shows, so the class is written only on a
+    // transition. null until the first render, which then writes both.
+    accumulating = null,
+    exposing = null,
+    // Raised by anything that changes the picture; cleared by render.
+    needsRender = true
+
+// Reused every frame: the vignette's base colour, read from the ramp at 0.
+const baseColour = [0, 0, 0]
 
 // Canvas pixels, not screen pixels: the canvas is scaled by CSS to fit the
 // space left next to the panel.
@@ -134,8 +144,11 @@ const applySeed = (seed) => {
 const HASH_DELAY = 400
 let hashDueAt = 0
 
+// Everything that changes the picture goes through here: the hash write is
+// debounced, the repaint is not. One call site, two schedules.
 const markStateChanged = () => {
     hashDueAt = performance.now() + HASH_DELAY
+    needsRender = true
 }
 
 const writeHash = () => {
@@ -160,62 +173,81 @@ const removeFocalPoint = (index=0) => {
 }
 
 const update = () => {
-    if (params.followFocalPoint && nEllipse.numberOfFocalPoints > 0) {
+    // Only while the image is being fed: on the way over to the panel the
+    // cursor would otherwise drag focal point 0 across a finished picture.
+    if (params.exposing && params.followFocalPoint && nEllipse.numberOfFocalPoints > 0) {
         const point = toCanvas(mf.x, mf.y)
         nEllipse.focalPoints[0].x = point.x
         nEllipse.focalPoints[0].y = point.y
         panel.refreshFocalValues()
     }
 
-    let correctionCounter = 0
-    if (params.animate) {
-        for (let p of particles) {
-            p.update(nEllipse, random, params.step)
-            correctionCounter += particleCorrection(p, random)
-        }
+    if (params.exposing) {
+        step()
+        // Directly, never through markStateChanged: that one is debounced, and
+        // pushing its deadline forward every frame would stop the URL hash from
+        // ever being written.
+        needsRender = true
     }
-    draw()
+    if (needsRender) render()
+
     if (hashDueAt && performance.now() >= hashDueAt) writeHash()
     window.requestAnimationFrame(update)
 }
 
-const draw = () => {
+// Feeding the image: move the particles, then count their hits. The order is
+// what a seed reproduces — leave it alone.
+const step = () => {
+    let correctionCounter = 0
+    for (let p of particles) {
+        p.update(nEllipse, random, params.step)
+        correctionCounter += particleCorrection(p, random)
+    }
+
+    if (!params.accumulate) density.clear()
+    for (let p of particles) {
+        density.add(p.x, p.y)
+    }
+}
+
+// Density to pixels. Runs when something that affects the picture has changed,
+// and is never gated by the exposure — that split is the whole point. See "The
+// exposure is not the redraw" in docs/decisions.md.
+const render = () => {
+    needsRender = false
+
     // Parsed once per edit, not once per frame — Gradient.from caches on the
     // stop list itself.
     const gradient = Gradient.from(params.gradient)
+    syncCanvasFrame()
 
-    // Accumulating mode is the old "record": mark it with a red frame, since
-    // nothing else on screen says the image is being kept. Only on a transition
-    // — this runs every frame.
-    const accumulating = !params.clearCanvas
-    if (accumulating !== recording) {
-        recording = accumulating
-        canvas.classList.toggle("recording", recording)
-    }
+    // The threshold is a fraction of what the image is normalised to, so it
+    // keeps meaning the same thing as the run gets brighter. whitePoint is
+    // zero on the first frames, before it has caught up with anything.
+    const glow = params.bloom.enabled && params.bloom.strength > 0
+        ? bloom.apply(density.data, width, height, params.bloom,
+            density.whitePoint || density.max)
+        : null
 
-    if (params.animate) {
-        if (params.clearCanvas) density.clear()
-
-        for (let p of particles) {
-            density.add(p.x, p.y)
-        }
-
-        density.render(imageData, {
-            exposure: params.exposure,
-            gamma: params.gamma,
-            adaptation: params.adaptation,
-            gradient
-        })
-        // In place, on the freshly rendered pixels — this branch is the only
-        // thing that writes imageData, so the effects cannot pile up on
-        // themselves while the simulation is paused.
-        post.apply(imageData.data, width, height, {
-            vignette: params.vignette,
-            grain: params.grain,
-            base: gradient.sample(0)
-        })
-        ctx.putImageData(imageData, 0, 0)
-    }
+    density.render(imageData, {
+        exposure: params.exposure,
+        gamma: params.gamma,
+        // A held exposure gets no new data, so there is nothing to ease
+        // towards. Snapping also keeps the white point still while someone
+        // judges a gamma change against it.
+        adaptation: params.exposing ? params.adaptation : 1,
+        gradient,
+        source: glow && glow.data,
+        max: glow && glow.max
+    })
+    // In place, on the freshly rendered pixels — nothing else writes imageData,
+    // so the effects cannot pile up on themselves.
+    post.apply(imageData.data, width, height, {
+        vignette: params.vignette,
+        grain: params.grain,
+        base: gradient.sample(0, baseColour)
+    })
+    ctx.putImageData(imageData, 0, 0)
 
     if (params.showFocalPoints) {
         // Crosses stay the same size on screen whatever the canvas resolution,
@@ -234,10 +266,23 @@ const draw = () => {
     }
 }
 
+// A red frame means the image is being kept, a quiet one that the exposure is
+// held. Guarded: render runs every frame while the exposure is running.
+const syncCanvasFrame = () => {
+    if (params.accumulate !== accumulating) {
+        accumulating = params.accumulate
+        canvas.classList.toggle("exposing", accumulating)
+    }
+    if (params.exposing !== exposing) {
+        exposing = params.exposing
+        canvas.classList.toggle("held", !exposing)
+    }
+}
+
 // The margin is the same on every side: tolerance canvases beyond each edge,
 // so 0 recycles a particle as soon as it leaves the visible area.
 const particleCorrection = (particle, random) => {
-    let change = false;
+    let change = false
     const marginX = params.tolerance*width,
         marginY = params.tolerance*height
     if (particle.x > width + marginX || particle.x < -marginX) {
@@ -368,7 +413,14 @@ window.onload = () => {
         loadPreset,
         resetParams,
         changed: markStateChanged,
-        clearImage: () => density.clear()
+        // Only the commented-out New exposure button calls this today; switching
+        // to Live and back does the same thing in two clicks. Kept because the
+        // repaint below is the non-obvious half of it: without it the old image
+        // would stay on screen over an empty buffer.
+        clearImage: () => {
+            density.clear()
+            needsRender = true
+        }
     })
     panel.setSeed(random.seed)
     panel.setCanvasSize(width, height)
@@ -424,10 +476,10 @@ window.onload = () => {
 
         switch (event.key) {
             case " ":
-                params.animate = !params.animate
+                params.exposing = !params.exposing
                 break
             case "c":
-                params.clearCanvas = !params.clearCanvas
+                params.accumulate = !params.accumulate
                 break
             case "s":
                 params.showFocalPoints = !params.showFocalPoints

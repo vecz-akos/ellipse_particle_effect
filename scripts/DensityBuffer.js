@@ -14,7 +14,7 @@ export default class DensityBuffer {
         this.whitePoint = 0
         this.table = null
         this.view = null
-        this.colour = null      // scratch for the gradient, reused per entry
+        this.colour = [0, 0, 0]     // scratch the gradient samples into
         this.resize(width, height)
     }
 
@@ -58,8 +58,13 @@ export default class DensityBuffer {
     // Log density + gamma, normalised to a white point that follows this.max
     // with a lag so the per-frame mode does not flicker. The curve itself lives
     // in buildTable; the pixel loop is only an array index.
-    render(imageData, { exposure=1, gamma=2.2, adaptation=.1, gradient=null } = {}) {
-        this.whitePoint += (this.max - this.whitePoint) * adaptation
+    // source and max let something else hand in what to draw — bloom adds a
+    // blurred copy of the density back into it. The white point has to follow
+    // that buffer's maximum and not the raw one, or the bright core clips.
+    render(imageData, { exposure=1, gamma=2.2, adaptation=.1, gradient=null, source=null, max=null } = {}) {
+        const data = source || this.data,
+            peak = max === null ? this.max : max
+        this.whitePoint += (peak - this.whitePoint) * adaptation
 
         const top = Math.ceil(this.whitePoint),
             table = this.buildTable(top, exposure, gamma, gradient),
@@ -70,8 +75,12 @@ export default class DensityBuffer {
         }
         const pixels = this.view
 
-        for (let i = 0; i < this.data.length; i++) {
-            const d = this.data[i]
+        // Truncated, because bloom makes the value a float and the table is
+        // indexed by density. The error is far below one step of the ramp; the
+        // alternative is a log1p and a pow per pixel, which is exactly what the
+        // table exists to avoid.
+        for (let i = 0; i < data.length; i++) {
+            const d = data[i]|0
             pixels[i] = d < top ? table[d] : ceiling
         }
     }
@@ -85,7 +94,7 @@ export default class DensityBuffer {
 
         const scale = this.whitePoint > 0 ? 1/Math.log1p(this.whitePoint*exposure) : 0,
             invGamma = 1/gamma,
-            colour = this.colour || (this.colour = [0, 0, 0])
+            colour = this.colour
 
         for (let d = 0; d <= top; d++) {
             let t = d > 0 ? Math.log1p(d*exposure)*scale : 0

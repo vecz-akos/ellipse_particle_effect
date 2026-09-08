@@ -26,6 +26,179 @@ Paragraphs, tables, lists.
 
 ---
 
+# Grain is sparse, coarse and follows the image
+
+Date: 2026-09-08
+
+Revises the grain half of "Vignette and grain on the bytes". The first version
+put a noise value on every pixel of every frame, which is sensor noise, not film
+grain: 98% of the frame moved, the empty canvas turned into static, and the
+effect read as "dirty" at any strength worth having.
+
+Three changes, all of them about *where* the grain is rather than how strong:
+
+- **Cells.** One noise value per `size × size` block, so a speck is bigger than
+  a pixel. At `size 2` a 400 px row changes value 80 times instead of 140.
+- **Coverage.** Only noise past a cut gets through, and what is left is
+  stretched back over the full range — so lowering coverage thins the grain out
+  instead of fading all of it. The setting maps almost exactly onto the fraction
+  of the frame that gets a speck at all: 0.3 touches 29% of pixels.
+- **It follows the image.** Each pixel's grain is scaled by how far it is from
+  the ramp's colour at 0 — the same base colour the vignette fades to. Empty
+  canvas gets nothing, midtones get the most. This is automatic rather than a
+  setting: grain on a blank background is the thing that looked wrong, and no
+  amount of it looked right.
+
+**The animated option is gone.** It moved the tile by a per-frame offset, which
+under change-driven rendering (see "The exposure is not the redraw") only
+happens while the exposure runs anyway — and a shimmering overlay on a still
+image is noise about noise. One less thing in `Params`.
+
+Defaults: `amount .15`, `size 1`, `coverage .4`, and `size` tops out at 4 px.
+The strongest speck at those settings shifts a midtone by 19 levels out of 255,
+and roughly two pixels in five get a speck at all.
+
+---
+
+# The footer is four buttons
+
+Date: 2026-09-08
+
+Revises the panel half of "The exposure is not the redraw" below; the split it
+describes is unchanged. The footer is now four toggle buttons in two rows —
+pause/resume and the mode, then the two overlays — instead of buttons plus
+checkboxes plus a segmented pair. Buttons read better at this size, and the
+overlays are the same kind of thing as the mode: a state you flip.
+
+**One button for the mode, not two.** It shows the state it is in (`Live` or
+`Exposure`) and switching is a click. That leaves the footer with one naming
+inconsistency worth knowing about: the pause button is named for the *action*
+(`Pause` while running) and the mode button for the *state*. Both are the
+idiomatic choice for their kind of control, and the mode button lights up in the
+same red the canvas frame wears in Exposure, so which one is a state is visible
+rather than only readable.
+
+**`New exposure` is gone**, commented out in `Panel.buildModes` rather than
+deleted. Switching to Live and back throws the buffer away in two clicks, and a
+third way to do the same thing earns its place only if that turns out to be
+awkward in practice. `clearImage` stays in `main.js`: it is what the button would
+call, and the repaint it triggers is the non-obvious half.
+
+---
+
+# The exposure is not the redraw
+
+Date: 2026-09-08
+
+T20. `animate` used to gate two unrelated things: stepping the particles into the
+density buffer, and turning that buffer into pixels. The consequence only shows
+up in the way the sketch is actually used — build an image up, stop, *then*
+choose the colours and the bloom — because with the run stopped nothing on the
+Look tab had any visible effect. The only way to see a change was to let it run
+for a frame, which does not redraw: it burns another pass of twenty thousand
+particles into a finished picture.
+
+There are three states here, not two: the exposure steps, the image is drawn,
+and the buffer either accumulates or is cleared each frame. The second one has no
+business being tied to the first.
+
+**Rendering is change-driven.** `render` runs when `needsRender` has been raised
+and does nothing otherwise, so a paused exposure with nothing touched costs
+literally nothing, and every Look control repaints the finished image at once.
+The alternative — render unconditionally every frame — pays for bloom's 23 ms at
+1080p forever, for an image that is not moving.
+
+**One signal, two schedules.** `markStateChanged` already fired from every panel
+edit, every drag, every shortcut, the resize and the preset paths, because it
+schedules the URL hash write. It now also raises the repaint flag: the hash write
+stays debounced by 400 ms, the repaint happens on the next frame. The stepping
+path raises the flag **directly** and never calls `markStateChanged` — that would
+push the hash deadline forward on every frame and the URL would silently stop
+updating for as long as the exposure ran.
+
+**Pausing stops the particles too.** Nothing consumes their positions while the
+image is not being fed, so stepping them would be invisible work, and it would
+slide the seeded stream by however long the app happened to be open. Verified:
+120 frames straight through and 120 frames with a 250-frame pause in the middle
+produce a byte-identical image.
+
+**Follow mode stops with the exposure.** The whole point of pausing is to move
+the cursor over to the panel; with follow tracking still live, that drags focal
+point 0 across the picture on the way — and under change-driven rendering the
+figure visibly wanders while you are trying to judge a colour. The toggle keeps
+its state and starts following again when the exposure resumes.
+
+**A held exposure snaps the white point.** `adaptation` exists to keep the
+per-frame mode from flickering as the maximum moves. With nothing being added
+there is nothing to smooth, and a brightness still drifting under repeated
+repaints would make a gamma judgement impossible.
+
+**The vocabulary went with it.** `animate` → `exposing`, driven by a Pause /
+Resume button rather than a checkbox; `clearCanvas` → `accumulate`, inverted,
+shown as a two-state **Live / Exposure** choice; "Clear image" → **New
+exposure**, moved next to the pause button so the whole run control is in one
+place; `.recording` → `.exposing`, with a quieter frame for a held exposure. The
+old names were implementation words that had leaked into the UI — "clear canvas"
+describes a call, not a mode, and nothing in this project has animated since the
+density buffer replaced the alpha accumulation.
+
+A **step-one-frame** button was considered and turned down: it is a smaller
+version of exactly the manual flicking that caused the problem. So was a single
+"finish the image" action that flips several things at once.
+
+---
+
+# Bloom belongs in the density
+
+Date: 2026-09-08
+
+Phase 4.3, T18. `scripts/Bloom.js` blurs a copy of the density buffer and adds it
+back to the density; the tone map then sees the sum. `DensityBuffer.render` takes
+an optional `source` array and the maximum that goes with it, and indexes the
+colour table with `source[i]|0`.
+
+**Linear space, not RGB.** Bloom is light spilling. Blurring the finished 8-bit
+pixels spreads values that are already clipped and already quantised and comes
+out flat and grey; done in the density, the halo simply lands lower on the ramp
+than the core and takes the ramp's middle colour on its own. Nothing tints it,
+and it follows the colours automatically.
+
+**Three box blurs, not a Gaussian kernel.** A real separable Gaussian at the
+radii this effect is interesting at is hundreds of taps wide, and the cost grows
+with the radius. Three box passes approximate a Gaussian closely enough for a
+halo and cost the same per pixel at radius 2 as at radius 128 — measured: 19.7 ms
+at radius 8 versus 21.0 ms at radius 128, 1080p. Three boxes of half-width `r`
+have a combined standard deviation of `sqrt(r² + r) ≈ r + ½`, which is where
+`boxRadius` comes from.
+
+**The white point follows the summed buffer.** `whitePoint` adapts towards
+whatever `render` is actually reading. Leaving it on the raw density's maximum
+clips the bright core to a flat blob as soon as strength goes up — that is the
+bug this arrangement exists to avoid, and the reason `max` is returned from the
+same loop that writes the sum.
+
+**Truncating the index is fine.** The table is indexed by density because density
+is an integer; a blurred float is not. `source[i]|0` costs one truncation and
+keeps the table. The quantisation error is far below one step of the ramp, and
+the alternative — a `log1p` and a `pow` per pixel — is exactly what
+"Density-to-colour lookup table" measured its way out of.
+
+**It is expensive, and the cost was worth chasing.** The first working version
+ran 47 ms per frame at 1080p. Three fixes took it to 23 ms: the vertical box pass
+now walks rows and keeps one running sum per column (striding down a column is
+cache-hostile), the 2:1 upsample collapses to "three quarters of your own column,
+one quarter of the neighbour you lean towards" with no per-pixel floor or clamp
+left, and the clamp helper is written out inline in the two innermost loops.
+4K is 78 ms. That is a preview-quality problem and belongs to T19, not to a
+further micro-optimisation: the honest answers are a cheaper preview or an
+offline export, both already on the roadmap.
+
+**Nothing to invalidate.** Everything is recomputed from the density every frame,
+so a `clear` needs no cooperation from `Bloom`; only the scratch buffers follow
+the canvas size, which `resize` handles on its own.
+
+---
+
 # The vignette fades to the ramp's base colour
 
 Date: 2026-09-08

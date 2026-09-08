@@ -98,8 +98,12 @@ Rules for all of it:
   one place that does not need either.
 - **Colour work belongs in `buildTable`, never in the pixel loop.** The table is
   indexed by density and built once per frame, so the ramp is sampled a few
-  thousand times rather than a few million. Phase 4's remaining effects have to
-  keep that shape; see the traps in `docs/roadmap.md`.
+  thousand times rather than a few million. Bloom makes the index a float and is
+  answered with a truncation (`source[i]|0`), not with per-pixel `log1p`/`pow`.
+- **`render`'s white point follows what `render` is reading.** With bloom on that
+  is the summed buffer, whose maximum `Bloom.apply` returns; normalising to the
+  raw density's maximum instead clips the bright core to a flat blob. If you add
+  another effect upstream of the tone map, it owes `render` a maximum too.
 - **No `Math.random` in the simulation.** Everything random draws from the
   single `Random` instance in `main.js` (passed into `Particle.update`), or the
   seed stops determining the image. The one exception is `Random.randomSeed`,
@@ -151,7 +155,7 @@ Rules for all of it:
 - **A preset file is untrusted input.** `Preset.apply` validates the whole
   document before writing anything and copies only known keys of matching type.
   Adding a `Params` field is enough for it to travel — but do not loosen the
-  checks, and keep the `SKIP` fields (`animate`, `followFocalPoint`,
+  checks, and keep the `SKIP` fields (`exposing`, `followFocalPoint`,
   `showFocalPoints`) out of it.
 - **An array in `Params` needs its own branch in all three of `Preset.capture`,
   `strip` and `apply`.** `typeof [] === "object"`, so the object paths look like
@@ -165,10 +169,22 @@ Rules for all of it:
   precisely because it does not get to inherit — someone reopens it months on.
   Do not "unify" the two by stripping the file as well.
 - **Anything the animation loop writes to the DOM has to check first.** Follow
-  mode calls `refreshFocalValues` sixty times a second and `draw` looks at the
-  recording class every frame, so both go through a changed-value guard
-  (`setNumber` / `setText` in `Panel.js`, the `recording` flag in `main.js`).
-  Do not add an unconditional DOM write to a per-frame path.
+  mode calls `refreshFocalValues` sixty times a second and `render` looks at the
+  canvas frame classes every frame, so both go through a changed-value guard
+  (`setNumber` / `setText` in `Panel.js`, `syncCanvasFrame` in `main.js`). Do not
+  add an unconditional DOM write to a per-frame path.
+- **Stepping the exposure and redrawing the image are separate, and the redraw
+  is change-driven.** `render` runs when `needsRender` is raised, not every
+  frame, so **anything that changes what is on screen has to announce itself** —
+  through `markStateChanged` (which schedules the debounced hash write *and* the
+  repaint) for anything that is part of the saved state, or by raising the flag
+  directly for what is not, like `clearImage`. Miss one and the canvas silently
+  shows a stale image. The stepping path raises the flag **directly**: routing a
+  per-frame signal through `markStateChanged` would push the hash deadline
+  forward every frame and the URL would never be written again.
+- **A held exposure snaps the white point instead of easing it.** With nothing
+  being added, `adaptation` has nothing to smooth, and a brightness that kept
+  drifting under a repaint would make grading impossible to judge.
 - `savePng` exports an offscreen canvas built from the last `imageData`, not the
   visible one, because `draw` strokes the focal-point crosses onto the visible
   canvas after the blit. Anything drawn on top of the image belongs there, not in

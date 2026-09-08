@@ -9,7 +9,7 @@
     --text: #e6e7ea;
     --text-dim: #9a9da6;
     --accent: #d9822b;
-    --recording: #e5443a;
+    --exposing: #e5443a;
 }
 
 * {
@@ -45,9 +45,14 @@ canvas {
     transition: box-shadow .15s ease-out;
 }
 
-/* Clearing off: the image is accumulating and worth keeping. */
-canvas.recording {
-    box-shadow: 0 0 0 2px var(--recording), 0 0 1.5rem #e5443a55, 0 1.5rem 3rem #0008;
+/* Exposure mode: the image is being kept, so it is worth saying so. */
+canvas.exposing {
+    box-shadow: 0 0 0 2px var(--exposing), 0 0 1.5rem #e5443a55, 0 1.5rem 3rem #0008;
+}
+
+/* Held: still an exposure, but nothing is being added to it. */
+canvas.exposing.held {
+    box-shadow: 0 0 0 2px #e5443a66, 0 1.5rem 3rem #0008;
 }
 
 /* Panel */
@@ -111,22 +116,38 @@ canvas.recording {
     background: var(--surface);
 }
 
+/* Two rows of two: the exposure controls, then the overlays. */
 .modes {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: .35rem .6rem;
+    gap: .3rem;
+    margin-bottom: .3rem;
 }
 
-.mode {
-    display: flex;
-    align-items: center;
-    gap: .4rem;
+.modes:last-child {
+    margin-bottom: 0;
+}
+
+.toggle {
     color: var(--text-dim);
-    cursor: pointer;
 }
 
-.mode:hover {
+.toggle.active {
+    background: var(--surface-raised);
+    border-color: var(--accent);
     color: var(--text);
+}
+
+/* The exposure is the one control whose stopped state is worth shouting about,
+   and the mode button matches the frame the canvas wears in Exposure. */
+.toggle.primary:not(.active) {
+    border-color: var(--exposing);
+    color: var(--exposing);
+}
+
+.toggle.mode.active {
+    border-color: var(--exposing);
+    color: var(--exposing);
 }
 
 .section h2, .panel-footer h2 {
@@ -244,7 +265,7 @@ button.wide {
 
 /* Focal points */
 
-.focal-list {
+.focal-list, .stop-list {
     display: flex;
     flex-direction: column;
     gap: .3rem;

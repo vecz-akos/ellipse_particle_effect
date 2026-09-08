@@ -3,9 +3,18 @@ import Random from "./Random.js"
 // One tile, wrapped over the canvas. Big enough that the repeat is invisible at
 // grain strengths anyone would use, small enough to stay in cache.
 const TILE = 256,
-    TILE_MASK = TILE - 1
+    TILE_MASK = TILE - 1,
+    MASK = TILE*TILE - 1
 
 const smoothstep = (t) => t*t*(3 - 2*t)
+
+const luma = (r, g, b) => (r*77 + g*150 + b*29)/256
+
+// Everything quieter than the cut is silence, and what is left is stretched back
+// over the full range — so lowering the coverage thins the grain out instead of
+// fading all of it towards nothing.
+const speck = (value, cut, spread) =>
+    value > cut ? (value - cut)*spread : value < -cut ? (value + cut)*spread : 0
 
 // Everything that happens to the finished RGB, after the tone map: the vignette
 // then the grain, in one pass over the bytes. Nothing here touches the
@@ -16,7 +25,6 @@ export default class PostProcess {
         this.mask = null
         this.maskKey = ""
         this.noise = null
-        this.frame = 0
     }
 
     // data is the ImageData's Uint8ClampedArray: R, G, B, A per pixel, in that
@@ -28,15 +36,24 @@ export default class PostProcess {
         if (!shade && !speckle) return
 
         const mask = shade ? this.vignetteMask(width, height, vignette) : null
-        let noise = null, offset = 0, step = 0
+
+        // Grain is sparse, coarse and follows the image:
+        //  - cell: one noise value per cell×cell block, so a speck is bigger
+        //    than a pixel, the way film grain is;
+        //  - cut: only the loudest part of the noise gets through, so most
+        //    cells stay clean — that is what "coverage" buys;
+        //  - weight: how far the pixel is from the base colour, so the empty
+        //    canvas stays empty instead of turning into static.
+        let noise = null, step = 0, cell = 1, cut = 0, spread = 1, baseLuma = 0
         if (speckle) {
             noise = this.noiseTile()
-            // An animated tile is the same noise read from somewhere else, so
-            // there is nothing to regenerate per frame.
-            offset = grain.animated ? Math.imul(this.frame++, 2654435761) >>> 0 : 0
             // Colour grain reads three different places in the tile; monochrome
             // reads one, which is what keeps it looking like film.
             step = grain.mono ? 0 : 7919
+            cell = Math.max(1, Math.round(grain.size))
+            cut = 1 - Math.min(1, Math.max(0, grain.coverage))
+            spread = cut < 1 ? 1/(1 - cut) : 0
+            baseLuma = luma(base[0], base[1], base[2])
         }
         const strength = speckle ? grain.amount*255 : 0
         // The edge fades towards the colour the ramp has at density 0 — the
@@ -54,11 +71,17 @@ export default class PostProcess {
                     data[p + 2] = baseB + (data[p + 2] - baseB)*m
                 }
                 if (speckle) {
-                    const base = ((y + offset) & TILE_MASK)*TILE + ((x + offset) & TILE_MASK)
-                    const n = noise[base]*strength
-                    data[p] += n
-                    data[p + 1] += step === 0 ? n : noise[(base + step) & (noise.length - 1)]*strength
-                    data[p + 2] += step === 0 ? n : noise[(base + step*2) & (noise.length - 1)]*strength
+                    const weight = Math.abs(luma(data[p], data[p + 1], data[p + 2]) - baseLuma)/255
+                    if (weight > 0) {
+                        const at = (((y/cell)|0) & TILE_MASK)*TILE + (((x/cell)|0) & TILE_MASK)
+                        const scale = strength*weight
+                        const n = speck(noise[at], cut, spread)*scale
+                        data[p] += n
+                        data[p + 1] += step === 0 ? n
+                            : speck(noise[(at + step) & MASK], cut, spread)*scale
+                        data[p + 2] += step === 0 ? n
+                            : speck(noise[(at + step*2) & MASK], cut, spread)*scale
+                    }
                 }
             }
         }

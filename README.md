@@ -18,6 +18,7 @@ edits everything else live.
 | `scripts/MouseFollower.js` | caches the cursor position |
 | `scripts/DensityBuffer.js` | per-pixel hit counts, and the tone map that turns them into an image |
 | `scripts/Gradient.js` | the colour ramp density is mapped through |
+| `scripts/Bloom.js` | the halo, blurred into the density before the tone map |
 | `scripts/PostProcess.js` | the vignette and the grain, over the finished pixels |
 | `scripts/Random.js` | the seeded PRNG every random step comes from |
 | `scripts/Params.js` | every tunable in one object, and the canvas sizing rule |
@@ -46,19 +47,23 @@ scaled to fit it whole.
   figure, or a per-point coordinate and weight for each; the step-curve
   constants; and at the very bottom, **Reset parameters** — every field back to
   its startup value with one centred focal point, keeping the seed.
-- **Look** — everything between the density buffer and the pixels: the tone map
-  (exposure, gamma, adaptation), the colour ramp, and a vignette and film grain,
-  both off until you turn them on. Bloom comes later. None of it touches the
+- **Look** — everything between the density buffer and the pixels, in the order
+  it is applied: bloom, the tone map (exposure, gamma, adaptation), the colour
+  ramp, a vignette and film grain. Bloom, vignette and grain are off until you
+  turn them on, and cost nothing while they are. None of it touches the
   simulation, so the usual way to work is to let an image build up first and
-  grade it afterwards.
+  grade it afterwards. Bloom is the expensive one — it re-blurs the whole image
+  every frame, so expect the frame rate to drop at 4K.
 - **Render** — the seed (type one and apply it, or roll a new one), PNG save at
-  the current canvas resolution, presets as JSON, and clearing the accumulated
-  image. The URL follows the state on its own; the preset file is for keeping
-  one on disk.
+  the current canvas resolution, and presets as JSON. The URL follows the state
+  on its own; the preset file is for keeping one on disk.
 - **Playback** — Phase 5, not built yet.
 
-The four mode toggles sit in a strip at the bottom of the panel, outside the
-tabs, so they are visible whichever tab is open — they mirror the keyboard.
+Four buttons sit in a strip at the bottom of the panel, outside the tabs, so
+they are visible whichever tab is open: **Pause / Resume** and the
+**Live / Exposure** mode above, the two overlay toggles below. They mirror the
+keyboard. The mode button is named for the state it is in; the pause button for
+what pressing it does.
 
 **Recycle tolerance** is how far past the canvas a particle may drift before it
 is teleported back to a random point on it, measured in canvases and applied
@@ -79,19 +84,28 @@ Keyboard shortcuts stay the fast path, and the panel follows them.
 
 | Key | Effect |
 | --- | --- |
-| `space` | pause / resume the simulation |
-| `c` | toggle buffer clearing — off means the image accumulates |
+| `space` | pause / resume the exposure |
+| `c` | switch between Live and Exposure |
 | `s` | show / hide a cross at each focal point |
 | `+` | add a focal point at the cursor |
 | `-` | remove the most recently added focal point |
 | `f` | make the newest focal point follow the mouse |
-| `r` | roll a new seed and restart from an empty image |
+| `r` | roll a new seed and start a new exposure |
 
-Turn clearing off with `c` and let it run: that is where the finished images
-come from. The canvas gets a red frame while clearing is off, so it is obvious
-that the image is being kept rather than redrawn. Regions the focal points stopped feeding fade back over time — the
-tone map normalises to a white point that keeps rising with the densest area,
-so a long run behaves like an exposure with a slowly closing aperture.
+**Live** draws every frame from where the particles are right now. **Exposure**
+keeps what they have drawn, so the image builds up — that is where the finished
+images come from, and the canvas gets a red frame to say so. Regions the focal
+points stopped feeding fade back over time: the tone map normalises to a white
+point that keeps rising with the densest area, so a long run behaves like an
+exposure with a slowly closing aperture.
+
+**Pausing stops the exposure, not the app.** Nothing is added to the image and
+the particles stand still, but everything else keeps working — so the way to
+finish an image is to pause it and then take your time on the Look tab. Every
+change there repaints immediately, and none of them touches what has been
+collected. While the exposure is paused a focal point set to follow the mouse
+stops following, so moving the cursor over to the panel cannot smear the picture
+you just finished.
 
 ## Seeds
 

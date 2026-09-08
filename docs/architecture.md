@@ -85,6 +85,16 @@ sorted here, so the panel can keep them in whatever order they were typed.
 `buildTable` asks for it every frame and the stops change only when someone edits
 them. `sample` writes into a caller-owned array — it runs once per table entry.
 
+### `scripts/Bloom.js`
+
+The halo, and the only effect that happens before the tone map. `apply` copies
+the density above a threshold into a half-resolution buffer, blurs it with three
+separable box passes (a Gaussian approximation whose cost does not grow with the
+radius), then adds it back to the full-resolution density and returns that buffer
+together with its maximum — which is what `render` has to normalise to. It owns
+its scratch buffers and recomputes everything each frame, so there is no state to
+invalidate when the image is cleared.
+
 ### `scripts/PostProcess.js`
 
 Everything that happens to the finished RGB: a vignette, then grain, in one pass
@@ -93,22 +103,27 @@ vignette fades the edge towards a base colour the caller passes in, which
 `main.js` takes from the ramp at density 0. It holds
 the two things worth keeping between frames: the cached vignette multiplier
 (rebuilt only when the canvas or one of its settings changes) and a 256×256 noise
-tile from a `Random` of its own, read at a per-frame offset when the grain is
-animated. With both effects off, `apply` returns before touching a pixel.
+tile from a `Random` of its own. The grain is sampled per cell rather than per
+pixel, cut so that only a set fraction of the frame gets a speck, and scaled by
+how far the pixel is from the base colour, so the empty canvas stays clean. With
+both effects off, `apply` returns before touching a pixel.
 
 ### `scripts/Params.js`
 
 Every tunable in one object: canvas `aspect` and `resolution`, `particleCount`,
 `tolerance`, the `step` curve constants, the tone-map settings, the `gradient`
-stop list, the `vignette` and `grain` settings, and the four mode toggles. `canvasSize(freeWidth, freeHeight)` turns the aspect and
+stop list, the `bloom`, `vignette` and `grain` settings, whether the exposure is
+running (`exposing`) and building up (`accumulate`), and the two overlay
+toggles. `canvasSize(freeWidth, freeHeight)` turns the aspect and
 resolution into the canvas' pixel size — the one place that decision is made.
 `Params.aspects` and `Params.resolutions` are the dropdown contents.
 
 ### `scripts/Panel.js`
 
 The control panel: four tabs (Parameters, Look, Render, Playback) built from
-native inputs, plus a footer with the four mode toggles that sits outside the
-tabs and stays visible — those are the ones a keyboard shortcut flips. The
+native inputs, plus a footer of four toggle buttons that sits outside the tabs
+and stays visible — pause/resume, the Live/Exposure mode, and the two overlays,
+which are the things a keyboard shortcut flips. The
 Parameters tab runs from the settings that change the frame outright to the ones
 rarely touched once a look is found: canvas, simulation, focal points, step
 curve, and a reset back to the constructor defaults. The Look tab is everything
@@ -154,19 +169,30 @@ hand-written, no framework, a dark surface with one accent colour.
 ```
 requestAnimationFrame
    └─ update()
-       ├─ followFocalPoint ? focalPoints[0] ← mouse position, in canvas pixels
-       ├─ for each particle:
-       │     error = nEllipse.calcDistance(particle)   ← NEllipse
-       │     particle steps by f(error) in a seeded random direction ← Particle, Random
-       │     particleCorrection(particle)              ← recycle if far off-screen
-       └─ draw()
-            ├─ clearCanvas ? density.clear()
-            ├─ density.add(x, y) for each particle    ← DensityBuffer
-            ├─ density.render(imageData)              ← DensityBuffer + Gradient
-            ├─ post.apply(imageData.data)             ← vignette, then grain
-            ├─ putImageData
-            └─ showFocalPoints ? stroke a cross at each focus
+       ├─ exposing && followFocalPoint ? focalPoints[0] ← mouse, in canvas pixels
+       ├─ exposing ? step()                        ← and raise needsRender
+       │    ├─ for each particle:
+       │    │     error = nEllipse.calcDistance(particle)   ← NEllipse
+       │    │     particle steps by f(error) in a seeded random direction ← Particle, Random
+       │    │     particleCorrection(particle)              ← recycle if far off-screen
+       │    ├─ accumulate ? keep the buffer : density.clear()
+       │    └─ density.add(x, y) for each particle          ← DensityBuffer
+       ├─ needsRender ? render()
+       │    ├─ bloom ? density + blurred density      ← Bloom, in linear space
+       │    ├─ density.render(imageData)              ← DensityBuffer + Gradient
+       │    ├─ post.apply(imageData.data)             ← vignette, then grain
+       │    ├─ putImageData
+       │    └─ showFocalPoints ? stroke a cross at each focus
+       └─ the hash is due ? writeHash()
 ```
+
+**Stepping the exposure and drawing the image are separate.** `step` is what
+`exposing` gates; `render` runs whenever `needsRender` has been raised — by a
+step, or by anything else that changes the picture. With the exposure paused and
+nothing touched, a frame costs nothing at all, and every control on the Look tab
+still repaints the finished image immediately. The flag is raised by
+`markStateChanged` (which also schedules the debounced hash write) and, for the
+per-frame stepping path, directly.
 
 A window resize, or an aspect/resolution change in the panel, recomputes the
 canvas size; if it actually changed, the density buffer is resized and the
@@ -182,9 +208,11 @@ All of these are planned; see `docs/roadmap.md` for the order and the reasoning.
 
 - **No re-render at size.** PNG export writes the canvas at its current
   resolution. A seed does not survive a resolution change — the simulation is in
-  pixels — so "preview small, render at print size" needs the normalised
-  coordinate space discussed in `decisions.md`.
-- **No presets.** The URL hash carries the seed only; the rest of `Params` is
-  not serialised.
-- **No post-processing.** The colour grading, bloom, vignette and grain in the
-  reference images under `../imgs/` were applied afterwards in an image editor.
+  pixels — so "preview small, render at print size" is Phase 6, by scaling the
+  step curve rather than by normalising coordinates.
+- **No cheap preview.** Phase 4 landed whole, and bloom costs 23 ms a frame at
+  1080p and 78 ms at 4K on the machine it was written on. Tuning a look at 4K is
+  not interactive; splitting a reduced-resolution preview from a full-quality
+  export is the open question, measured under T19 in `docs/agent-message.md`.
+- **No animation.** Focal points move only when dragged; paths, a timeline and
+  timelapse export are Phase 5.
