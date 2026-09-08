@@ -26,6 +26,73 @@ Paragraphs, tables, lists.
 
 ---
 
+# A colour ramp instead of two colours
+
+Date: 2026-09-08
+
+Phase 4.1, T16. `Params.backgroundColor` and `foregroundColor` are gone;
+`Params.gradient` is a list of `{ at, color }` stops over 0…1, and
+`scripts/Gradient.js` samples it. The black → orange → white grading of the
+renders in `../imgs/` was done afterwards in an image editor; it is a setting
+now.
+
+**It costs nothing.** The ramp is evaluated inside `buildTable`, once per density
+value, and the pixel loop is still a single array index — the property T3 was
+built for. `sample` writes into a scratch array the caller owns rather than
+returning a fresh one, because it runs a few thousand times per frame.
+`Gradient.from` caches the parsed stops against their own text, so hex parsing
+happens when someone edits a stop, not sixty times a second.
+
+**The default renders the old image byte for byte.** Two stops, `#ffffff` at 0
+and `#000000` at 1, reduce the interpolation to exactly the lerp that was there
+— verified over five frames of an adapting white point, every byte equal. That
+was the acceptance check, and it is the reason the default is two stops rather
+than something prettier.
+
+**Sorting belongs to `Gradient`, not the panel.** The stored order is whatever
+was typed; the ramp sorts its own copy. The panel does reorder the rows, but only
+on `change` — sorting on every keystroke pulls the row out from under the cursor
+while a position is being typed.
+
+**Backward compatibility was explicitly dropped.** Presets and links written
+before this entry do not load their colours (the project is work-in-progress and
+nothing shipped depends on them); no version bump, since the rest of such a
+document still applies and the ramp falls back to the default. `Preset` gained
+three array-shaped cases in exchange: `capture` copies arrays with `map` because
+spreading one gives `{0: …, 1: …}`, `strip` compares a whole array against the
+default instead of diffing it key by key, and `apply` validates the stop list as
+a unit — a half-read ramp is a colour scheme nobody chose. A four-stop link is
+359 characters; the default ramp does not appear in a link at all.
+
+---
+
+# A Look tab, because grading happens after the image exists
+
+Date: 2026-09-06
+
+Phase 4.0. The tone map (`exposure`, `gamma`, `adaptation`, the two colours) left
+the Parameters tab for a new **Look** tab, second of four, between Parameters and
+Render. The split is by what a control does, not by how it feels: Parameters
+shapes the simulation and most of it restarts the image, while nothing on Look
+touches a particle — the density buffer is re-rendered every frame from the same
+counts, so a look can be set on an image that finished accumulating an hour ago.
+That is the actual workflow: draw first, grade later. Bloom, vignette, grain and
+the gradient colormap join it as the rest of the phase.
+
+This step deliberately moves controls and changes no maths. It is the one part of
+Phase 4 with no visual consequence, so it is worth having alone in a commit —
+anything that looks different afterwards came from the next step, not this one.
+
+`Panel.sync`, `Preset` and the URL hash needed no change at all: a control is a
+`read`/`write` pair over `Params` and registers itself in `this.controls`
+wherever it is built, and the preset schema is `Params`' own keys. Which tab a
+control sits on was never encoded anywhere, which is the point of the design.
+
+Four tabs no longer fit 19rem at the body font size, so `.tab` drops to 12px.
+Widening the panel was the alternative and it costs canvas.
+
+---
+
 # Reset means a fresh `Params`, not a stored snapshot
 
 Date: 2026-09-06

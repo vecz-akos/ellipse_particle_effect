@@ -17,12 +17,16 @@ export default class Params {
         this.manualWeight = false
         this.sharedWeight = 0
 
-        // tone map
+        // tone map. gradient is the colormap: stops at a position in 0…1, in any
+        // order — Gradient sorts them. The default two are the old background
+        // and foreground colours, so it renders the same image.
         this.exposure = .9
         this.gamma = .5
         this.adaptation = .1
-        this.backgroundColor = "#ffffff"
-        this.foregroundColor = "#000000"
+        this.gradient = [
+            { at: 0, color: "#ffffff" },
+            { at: 1, color: "#000000" }
+        ]
 
         // toggles
         this.animate = true

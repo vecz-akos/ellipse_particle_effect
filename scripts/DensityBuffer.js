@@ -14,6 +14,7 @@ export default class DensityBuffer {
         this.whitePoint = 0
         this.table = null
         this.view = null
+        this.colour = null      // scratch for the gradient, reused per entry
         this.resize(width, height)
     }
 
@@ -57,11 +58,11 @@ export default class DensityBuffer {
     // Log density + gamma, normalised to a white point that follows this.max
     // with a lag so the per-frame mode does not flicker. The curve itself lives
     // in buildTable; the pixel loop is only an array index.
-    render(imageData, { exposure=1, gamma=2.2, adaptation=.1, background=[255, 255, 255], foreground=[0, 0, 0] } = {}) {
+    render(imageData, { exposure=1, gamma=2.2, adaptation=.1, gradient=null } = {}) {
         this.whitePoint += (this.max - this.whitePoint) * adaptation
 
         const top = Math.ceil(this.whitePoint),
-            table = this.buildTable(top, exposure, gamma, background, foreground),
+            table = this.buildTable(top, exposure, gamma, gradient),
             ceiling = table[top]
 
         if (!this.view || this.view.buffer !== imageData.data.buffer) {
@@ -77,25 +78,21 @@ export default class DensityBuffer {
 
     // Density is always an integer (add only ever does += 1), so the whole tone
     // curve fits in a table indexed by density — a few thousand entries instead
-    // of millions of log1p/pow calls. Phase 4's colormap replaces the body of
-    // this loop; see "Density-to-colour lookup table" in docs/decisions.md.
-    buildTable(top, exposure, gamma, background, foreground) {
+    // of millions of log1p/pow calls. The colormap is the body of this loop and
+    // nothing else; see "Density-to-colour lookup table" in docs/decisions.md.
+    buildTable(top, exposure, gamma, gradient) {
         if (!this.table || this.table.length <= top) this.table = new Uint32Array(top + 1)
 
         const scale = this.whitePoint > 0 ? 1/Math.log1p(this.whitePoint*exposure) : 0,
             invGamma = 1/gamma,
-            [br, bg, bb] = background,
-            [fr, fg, fb] = foreground
+            colour = this.colour || (this.colour = [0, 0, 0])
 
         for (let d = 0; d <= top; d++) {
             let t = d > 0 ? Math.log1p(d*exposure)*scale : 0
             if (t > 1) t = 1
             if (t > 0) t = Math.pow(t, invGamma)
-            this.table[d] = pack(
-                Math.round(br + (fr - br)*t),
-                Math.round(bg + (fg - bg)*t),
-                Math.round(bb + (fb - bb)*t)
-            )
+            gradient.sample(t, colour)
+            this.table[d] = pack(colour[0], colour[1], colour[2])
         }
         return this.table
     }

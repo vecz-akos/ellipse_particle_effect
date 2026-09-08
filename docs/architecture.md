@@ -72,35 +72,44 @@ reallocates while copying the overlapping region so the accumulated image
 survives a window resize. `render` maps density to colour into an `ImageData` —
 `log1p(density * exposure)` normalised to a white point that lags the running
 maximum (so the per-frame mode does not flicker), then a gamma curve, then a
-lerp between the background and foreground colour. The curve is evaluated in
-`buildTable`, once per density value rather than once per pixel, and the pixel
-loop only indexes that table — which is also where Phase 4's colormap will go.
-It knows nothing about particles or the canvas; `main.js` does the
-`putImageData`.
+`Gradient` sample. The curve is evaluated in `buildTable`, once per density value
+rather than once per pixel, and the pixel loop only indexes that table. It knows
+nothing about particles or the canvas; `main.js` does the `putImageData`.
+
+### `scripts/Gradient.js`
+
+The colormap: a list of `{ at, color }` stops over 0…1, and `sample(t, out)`
+interpolating between the two neighbours, clamped outside the ends. Stops are
+sorted here, so the panel can keep them in whatever order they were typed.
+`Gradient.from` caches the parsed form against the stop list's text, because
+`buildTable` asks for it every frame and the stops change only when someone edits
+them. `sample` writes into a caller-owned array — it runs once per table entry.
 
 ### `scripts/Params.js`
 
 Every tunable in one object: canvas `aspect` and `resolution`, `particleCount`,
-`tolerance`, the `step` curve constants, the tone-map settings and colours, and
-the four mode toggles. `canvasSize(freeWidth, freeHeight)` turns the aspect and
+`tolerance`, the `step` curve constants, the tone-map settings, the `gradient`
+stop list, and the four mode toggles. `canvasSize(freeWidth, freeHeight)` turns the aspect and
 resolution into the canvas' pixel size — the one place that decision is made.
 `Params.aspects` and `Params.resolutions` are the dropdown contents.
 
 ### `scripts/Panel.js`
 
-The control panel: three tabs (Parameters, Render, Playback) built from native
-inputs, plus a footer with the four mode toggles that sits outside the tabs and
-stays visible — those are the ones a keyboard shortcut flips. The Parameters tab
-runs from the settings that change the frame outright to the ones rarely touched
-once a look is found: canvas, simulation, focal points, tone map, step curve, and
-a reset back to the constructor defaults. It holds no state — every control gets a `read`/`write` closure over the
+The control panel: four tabs (Parameters, Look, Render, Playback) built from
+native inputs, plus a footer with the four mode toggles that sits outside the
+tabs and stays visible — those are the ones a keyboard shortcut flips. The
+Parameters tab runs from the settings that change the frame outright to the ones
+rarely touched once a look is found: canvas, simulation, focal points, step
+curve, and a reset back to the constructor defaults. The Look tab is everything
+downstream of the density buffer — the tone map today, the rest of Phase 4
+later. It holds no state — every control gets a `read`/`write` closure over the
 `Params` instance, plus an optional callback telling `main.js` what has to be
 rebuilt (canvas geometry, particles, seed). `sync` pulls every control back from
 `Params`, which is how a keyboard shortcut keeps the UI honest;
-`syncFocalPoints` rebuilds the focal-point rows and `refreshFocalValues` follows
-a drag. `sync` is the whole contract for a `Params` written from outside: values,
-the weight slider's range, the clamped `sharedWeight`, and which weight editor is
-live.
+`syncFocalPoints` rebuilds the focal-point rows, `syncGradientStops` the ramp's
+rows, and `refreshFocalValues` follows a drag. `sync` is the whole contract for a
+`Params` written from outside: values, the weight slider's range, the clamped
+`sharedWeight`, which weight editor is live, and the stop list.
 
 ### `scripts/Preset.js`
 

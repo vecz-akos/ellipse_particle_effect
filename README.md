@@ -17,6 +17,7 @@ edits everything else live.
 | `scripts/Particle.js` | a `Point` that steps according to its error |
 | `scripts/MouseFollower.js` | caches the cursor position |
 | `scripts/DensityBuffer.js` | per-pixel hit counts, and the tone map that turns them into an image |
+| `scripts/Gradient.js` | the colour ramp density is mapped through |
 | `scripts/Random.js` | the seeded PRNG every random step comes from |
 | `scripts/Params.js` | every tunable in one object, and the canvas sizing rule |
 | `scripts/Panel.js` | the control panel on the right |
@@ -41,11 +42,13 @@ scaled to fit it whole.
 
 - **Parameters** — canvas aspect and render resolution; particle count and
   recycle tolerance; the focal points — one shared weight to resize the whole
-  figure, or a per-point coordinate and weight for each;
-  the tone map (exposure, gamma, adaptation) and the two colours; the
-  step-curve constants; and at the very bottom, **Reset parameters** — every
-  field back to its startup value with one centred focal point, keeping the
-  seed.
+  figure, or a per-point coordinate and weight for each; the step-curve
+  constants; and at the very bottom, **Reset parameters** — every field back to
+  its startup value with one centred focal point, keeping the seed.
+- **Look** — everything between the density buffer and the pixels: the tone map
+  (exposure, gamma, adaptation) and the colour ramp today, bloom, vignette and
+  grain later. None of it touches the simulation, so the usual way to work is to
+  let an image build up first and grade it afterwards.
 - **Render** — the seed (type one and apply it, or roll a new one), PNG save at
   the current canvas resolution, presets as JSON, and clearing the accumulated
   image. The URL follows the state on its own; the preset file is for keeping
@@ -110,6 +113,19 @@ the image is.
 The file keeps every field, while the link carries only what differs from the
 defaults — a link is shared and ephemeral, a saved file is what you come back to
 in six months.
+
+## Colours
+
+The image is a density buffer, and the **colour ramp** on the Look tab is what
+density is mapped through: position `0` is empty canvas, `1` is the densest
+pixel, and every stop in between is a colour the image passes on the way. Two
+stops give the plain white → black default; add a couple more and the
+black → orange → white grading of the reference renders is a setting rather than
+something done afterwards in an image editor.
+
+Stops are sorted for you, so a position can be typed in any order, and a new
+stop lands in the widest gap with the colour the ramp already has there — adding
+one changes nothing until you move it.
 
 ## Documentation
 

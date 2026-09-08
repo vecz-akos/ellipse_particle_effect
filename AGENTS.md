@@ -90,6 +90,10 @@ Rules for all of it:
   it accumulates hits into `DensityBuffer` and blits one `ImageData`. The old
   `record` flag and the per-particle alpha are gone — brightness is `exposure`
   and `gamma` now.
+- **Colour work belongs in `buildTable`, never in the pixel loop.** The table is
+  indexed by density and built once per frame, so the ramp is sampled a few
+  thousand times rather than a few million. Phase 4's remaining effects have to
+  keep that shape; see the traps in `docs/roadmap.md`.
 - **No `Math.random` in the simulation.** Everything random draws from the
   single `Random` instance in `main.js` (passed into `Particle.update`), or the
   seed stops determining the image. The one exception is `Random.randomSeed`,
@@ -143,6 +147,12 @@ Rules for all of it:
   Adding a `Params` field is enough for it to travel — but do not loosen the
   checks, and keep the `SKIP` fields (`animate`, `followFocalPoint`,
   `showFocalPoints`) out of it.
+- **An array in `Params` needs its own branch in all three of `Preset.capture`,
+  `strip` and `apply`.** `typeof [] === "object"`, so the object paths look like
+  they cover it and quietly do not: spreading an array gives `{0: …, 1: …}`,
+  and diffing it key by key against a default of another length is nonsense.
+  `gradient` is the existing example — arrays are carried, compared and
+  validated whole.
 - **One capture, two serialisations.** `Preset.strip` runs for the URL only: a
   link omits defaults, so it inherits whatever a default becomes later, which is
   fine for something shared and ephemeral. The `.json` file keeps every field

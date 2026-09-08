@@ -68,14 +68,18 @@ canvas.recording {
     border-bottom: 1px solid var(--border);
 }
 
+/* Four tabs in 19rem: the longest label ("Parameters") only fits a quarter of
+   that below the body font size. */
 .tab {
     flex: 1;
-    padding: .7rem .4rem;
+    padding: .7rem .2rem;
     border: none;
     border-bottom: 2px solid transparent;
     background: none;
     color: var(--text-dim);
     font: inherit;
+    font-size: 12px;
+    white-space: nowrap;
     cursor: pointer;
 }
 
@@ -251,6 +255,18 @@ button.wide {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr auto;
     gap: .3rem;
+}
+
+/* Position, colour, remove — the swatch takes what the number does not need. */
+.stop-row {
+    display: grid;
+    grid-template-columns: 4rem 1fr auto;
+    gap: .3rem;
+}
+
+.stop-row input[type="number"] {
+    min-width: 0;
+    padding: .2rem .3rem;
 }
 
 .focal-field {

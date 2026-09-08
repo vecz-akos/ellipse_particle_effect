@@ -128,16 +128,17 @@ Those images are, almost exactly, a gradient colormap over density plus bloom �
 so this phase is less "add effects" than "stop doing by hand what the density
 buffer already has the information for".
 
-### 4.0 — A tab of its own
+### 4.0 — A tab of its own — **done**
 
 The tone map controls (`exposure`, `gamma`, `adaptation`, and the two colours)
-leave the Parameters tab for a new **Look** tab, sitting **second, between
-Parameters and Render**. Every effect below lands there too. Parameters keeps
-what shapes the simulation; Look keeps what turns density into a picture.
+left the Parameters tab for the **Look** tab, second of four, between Parameters
+and Render. Every effect below lands there too. Parameters keeps what shapes the
+simulation; Look keeps what turns density into a picture. See "A Look tab,
+because grading happens after the image exists" in `docs/decisions.md`.
 
-This first step moves controls and changes no maths. Do it on its own — it is
-the one part of the phase with no visual consequence, so it should not be
-tangled up with a change that has one.
+This first step moved controls and changed no maths — it is the one part of the
+phase with no visual consequence, so it was not tangled up with a change that
+has one.
 
 ### The pipeline
 
@@ -171,19 +172,25 @@ than reading as grain.
 | Effect | Where | Controls |
 | --- | --- | --- |
 | **Tone map** | existing | exposure, gamma, adaptation — moved, not changed |
+| **Gradient colormap** | inside the LUT | **done** — `scripts/Gradient.js`, stop list on the Look tab |
 | **Bloom** | on density, pre-tone-map | radius, strength, threshold |
 | **Vignette** | RGB | amount, radius, softness |
 | **Grain** | RGB, last | amount, monochrome/colour, static or per-frame |
-| **Gradient colormap** | inside the LUT | multi-stop colour ramp, later in the phase |
 
-**The gradient colormap** replaces the two-colour background→foreground lerp
+**The gradient colormap** replaced the two-colour background→foreground lerp
 with a ramp of several stops, so the black → orange → white grading of the
-reference images becomes a setting rather than a post-process. It is deliberately
-scheduled **late in this phase**, but it is worth knowing that it is also the
-*cheapest* of the four and the highest-impact: `buildTable` already exists and
-already runs once per density value, so this is a different body for one loop
-and no change at all to the pixel loop. T3 built the slot for it on purpose. It
-can be pulled forward if the phase drags.
+reference images is a setting rather than a post-process. See "A colour ramp
+instead of two colours" in `docs/decisions.md`.
+
+It was scheduled late here and was **pulled forward to 4.1**: it is the cheapest
+of the four and the highest-impact. `buildTable` already existed and already ran
+once per density value, so it was a different body for one loop and no change at
+all to the pixel loop — T3 built the slot for it on purpose. It also had to come
+first for a reason the effects below depend on: bloom takes its colour from the
+middle of the ramp, so there has to be a ramp before a halo is worth looking at.
+
+The remaining order is **4.1 colormap, 4.2 vignette + grain, 4.3 bloom, 4.4
+measure** — broken into T16–T19 in `docs/agent-message.md`.
 
 ### Traps worth knowing before starting
 

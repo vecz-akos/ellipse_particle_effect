@@ -7,6 +7,7 @@ import Random from "./Random.js";
 import Params from "./Params.js";
 import Panel from "./Panel.js";
 import Preset from "./Preset.js";
+import Gradient from "./Gradient.js";
 
 const canvas = document.querySelector('canvas'),
     stage = document.querySelector('.stage'),
@@ -46,12 +47,6 @@ let width = 1,
     panel = null,
     dragging = -1,
     recording = false
-
-const rgb = (hex) => [
-    parseInt(hex.slice(1, 3), 16),
-    parseInt(hex.slice(3, 5), 16),
-    parseInt(hex.slice(5, 7), 16)
-]
 
 // Canvas pixels, not screen pixels: the canvas is scaled by CSS to fit the
 // space left next to the panel.
@@ -183,6 +178,10 @@ const update = () => {
 }
 
 const draw = () => {
+    // Parsed once per edit, not once per frame — Gradient.from caches on the
+    // stop list itself.
+    const gradient = Gradient.from(params.gradient)
+
     // Accumulating mode is the old "record": mark it with a red frame, since
     // nothing else on screen says the image is being kept. Only on a transition
     // — this runs every frame.
@@ -203,15 +202,15 @@ const draw = () => {
             exposure: params.exposure,
             gamma: params.gamma,
             adaptation: params.adaptation,
-            background: rgb(params.backgroundColor),
-            foreground: rgb(params.foregroundColor)
+            gradient
         })
         ctx.putImageData(imageData, 0, 0)
     }
 
     if (params.showFocalPoints) {
-        // Crosses stay the same size on screen whatever the canvas resolution.
-        ctx.strokeStyle = params.foregroundColor
+        // Crosses stay the same size on screen whatever the canvas resolution,
+        // and take the ramp's densest colour so they stand out on the image.
+        ctx.strokeStyle = gradient.top
         ctx.lineWidth = Math.max(1, Math.round(canvasScale()))
         const crossSize = 5*ctx.lineWidth
         nEllipse.focalPoints.forEach(point => {

@@ -1,4 +1,5 @@
 import Params from "./Params.js"
+import Gradient from "./Gradient.js"
 
 const el = (tag, className, text) => {
     const node = document.createElement(tag)
@@ -18,8 +19,12 @@ const setText = (node, text) => {
     if (node.textContent !== text) node.textContent = text
 }
 
+// Parameters shapes the simulation, Look turns density into a picture — the
+// usual workflow is to draw an image first and grade it afterwards, so Look
+// comes right after Parameters. See Phase 4 in docs/roadmap.md.
 const TABS = [
     { id: "parameters", label: "Parameters" },
+    { id: "look", label: "Look" },
     { id: "render", label: "Render" },
     { id: "playback", label: "Playback" }
 ]
@@ -37,6 +42,7 @@ export default class Panel {
         this.root = el("aside", "panel")
         this.buildTabs()
         this.buildParameters()
+        this.buildLook()
         this.buildRender()
         this.buildPlayback()
         this.buildModes()
@@ -254,34 +260,6 @@ export default class Panel {
         focal.appendChild(this.targetSumReadout)
         this.syncFocalPoints()
 
-        const tone = this.section(body, "Tone map")
-        this.slider(tone, "Exposure", {
-            read: () => params.exposure,
-            write: (v) => params.exposure = v,
-            min: .05, max: 4, step: .05,
-            format: (v) => v.toFixed(2)
-        })
-        this.slider(tone, "Gamma", {
-            read: () => params.gamma,
-            write: (v) => params.gamma = v,
-            min: .1, max: 4, step: .05,
-            format: (v) => v.toFixed(2)
-        })
-        this.slider(tone, "Adaptation", {
-            read: () => params.adaptation,
-            write: (v) => params.adaptation = v,
-            min: .01, max: 1, step: .01,
-            format: (v) => v.toFixed(2)
-        })
-        this.colour(tone, "Background", {
-            read: () => params.backgroundColor,
-            write: (v) => params.backgroundColor = v
-        })
-        this.colour(tone, "Foreground", {
-            read: () => params.foregroundColor,
-            write: (v) => params.foregroundColor = v
-        })
-
         // Advanced, and rarely touched once the look is set — so it sits last.
         const curve = this.section(body, "Step curve")
         curve.appendChild(el("p", "hint", "step = sqrt(error + offset) * scale - bias"))
@@ -308,6 +286,47 @@ export default class Panel {
         })
         defaults.appendChild(reset)
         defaults.appendChild(el("p", "hint", "Every parameter back to its startup value, and one centred focal point. The seed is kept."))
+    }
+
+    // Everything between the density buffer and the pixels on screen. None of it
+    // touches the simulation, so an image can be graded long after it was drawn;
+    // bloom, vignette, grain and the gradient colormap land here too.
+    buildLook() {
+        const body = this.tabBodies.look,
+            params = this.params
+
+        const tone = this.section(body, "Tone map")
+        this.slider(tone, "Exposure", {
+            read: () => params.exposure,
+            write: (v) => params.exposure = v,
+            min: .05, max: 4, step: .05,
+            format: (v) => v.toFixed(2)
+        })
+        this.slider(tone, "Gamma", {
+            read: () => params.gamma,
+            write: (v) => params.gamma = v,
+            min: .1, max: 4, step: .05,
+            format: (v) => v.toFixed(2)
+        })
+        this.slider(tone, "Adaptation", {
+            read: () => params.adaptation,
+            write: (v) => params.adaptation = v,
+            min: .01, max: 1, step: .01,
+            format: (v) => v.toFixed(2)
+        })
+        tone.appendChild(el("p", "hint", "The look is applied to the accumulated image on every frame — nothing here restarts the run."))
+
+        const ramp = this.section(body, "Colours")
+        this.stopList = el("div", "focal-list")
+        ramp.appendChild(this.stopList)
+        const addStop = el("button", "wide", "Add stop")
+        addStop.addEventListener("click", () => this.addGradientStop())
+        ramp.appendChild(addStop)
+        ramp.appendChild(el("p", "hint", "Position 0 is empty canvas, 1 is the densest pixel."))
+        this.syncGradientStops()
+
+        const effects = this.section(body, "Effects")
+        effects.appendChild(el("p", "hint", "Bloom, vignette and grain are the rest of Phase 4 — see docs/roadmap.md."))
     }
 
     // The modes live in a footer, outside the tabs: they are the things a
@@ -457,6 +476,78 @@ export default class Panel {
         this.syncWeightControls()
     }
 
+    // The colour ramp's stops, rebuilt rather than patched — the focal-point
+    // rows above work the same way, and neither is on a per-frame path.
+    syncGradientStops() {
+        const stops = this.params.gradient
+        this.stopList.textContent = ""
+
+        stops.forEach((stop, index) => {
+            const row = el("div", "stop-row")
+
+            const at = el("input")
+            at.type = "number"
+            at.min = 0
+            at.max = 1
+            at.step = .05
+            at.value = stop.at
+            at.addEventListener("input", () => {
+                const value = Number(at.value)
+                if (Number.isNaN(value)) return
+                stop.at = Math.min(1, Math.max(0, value))
+                this.touched()
+            })
+            // Reordering while a digit is being typed would pull the row out
+            // from under the cursor, so it waits for the field to be committed.
+            at.addEventListener("change", () => this.sortGradientStops())
+
+            const colour = el("input")
+            colour.type = "color"
+            colour.value = stop.color
+            colour.addEventListener("input", () => {
+                stop.color = colour.value
+                this.touched()
+            })
+
+            const remove = el("button", "remove", "×")
+            remove.title = "Remove this stop"
+            // Two is a ramp; one is a flat fill and zero is nothing to sample.
+            remove.disabled = stops.length <= 2
+            remove.addEventListener("click", () => {
+                stops.splice(index, 1)
+                this.touched()
+                this.syncGradientStops()
+            })
+
+            row.append(at, colour, remove)
+            this.stopList.appendChild(row)
+        })
+    }
+
+    sortGradientStops() {
+        this.params.gradient.sort((a, b) => a.at - b.at)
+        this.syncGradientStops()
+    }
+
+    // A new stop lands in the widest gap, in the colour the ramp already has
+    // there — so adding one changes nothing until it is moved.
+    addGradientStop() {
+        const stops = this.params.gradient
+        let at = .5,
+            widest = -1
+        for (let i = 1; i < stops.length; i++) {
+            const gap = stops[i].at - stops[i - 1].at
+            if (gap > widest) {
+                widest = gap
+                at = (stops[i].at + stops[i - 1].at)/2
+            }
+        }
+
+        stops.push({ at, color: Gradient.hex(Gradient.from(stops).sample(at)) })
+        this.touched()
+        this.sortGradientStops()
+    }
+
     // The shared weight and the per-row w fields are two views of one number, so
     // exactly one of them is editable at a time.
     syncWeightControls() {
@@ -520,5 +611,8 @@ export default class Panel {
 
         for (const control of this.controls) control()
         this.syncWeightControls()
+        // Not one of the registered controls: the stop list is a variable number
+        // of rows, so a preset or a reset has to rebuild it.
+        this.syncGradientStops()
     }
 }

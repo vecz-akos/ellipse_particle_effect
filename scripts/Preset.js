@@ -17,6 +17,22 @@ const SKIP = new Set(["animate", "followFocalPoint", "showFocalPoints"])
 // DensityBuffer.add truncates to an integer anyway.
 const round = (value) => Math.round(value*100)/100
 
+const HEX = /^#[0-9a-f]{6}$/i
+
+// The one array-valued parameter, so it gets its own check rather than a
+// general-purpose deep validator. All or nothing: a half-read ramp is a colour
+// scheme nobody chose, and the default is a better answer than that.
+const gradientStops = (value) => {
+    if (!Array.isArray(value) || value.length < 2) return null
+    const stops = []
+    for (const stop of value) {
+        if (!stop || typeof stop !== "object") return null
+        if (!Number.isFinite(stop.at) || !HEX.test(String(stop.color))) return null
+        stops.push({ at: Math.min(1, Math.max(0, stop.at)), color: stop.color })
+    }
+    return stops
+}
+
 // A saved image is the seed, the parameters and the focal points — plus the
 // canvas the points were placed on, so they can be scaled into a different one.
 // Files are user-supplied, so `apply` copies only keys that already exist in
@@ -26,7 +42,11 @@ export default class Preset {
         const saved = {}
         for (const [key, value] of Object.entries(params)) {
             if (SKIP.has(key)) continue
-            saved[key] = value !== null && typeof value === "object" ? { ...value } : value
+            // Arrays are objects, and spreading one gives {0: …, 1: …} — a
+            // document that no longer round-trips.
+            if (Array.isArray(value)) saved[key] = value.map(item => ({ ...item }))
+            else if (value !== null && typeof value === "object") saved[key] = { ...value }
+            else saved[key] = value
         }
 
         return {
@@ -53,7 +73,11 @@ export default class Preset {
 
         for (const [key, value] of Object.entries(preset.params)) {
             const fallback = defaults[key]
-            if (fallback !== null && typeof fallback === "object") {
+            if (Array.isArray(fallback)) {
+                // One value, not a set of keys to diff: half a ramp means
+                // nothing, so it is carried whole or left out whole.
+                if (JSON.stringify(value) !== JSON.stringify(fallback)) params[key] = value
+            } else if (fallback !== null && typeof fallback === "object") {
                 const nested = {}
                 for (const [name, nestedValue] of Object.entries(value || {})) {
                     if (nestedValue !== fallback[name]) nested[name] = nestedValue
@@ -115,7 +139,10 @@ export default class Preset {
             if (SKIP.has(key) || !(key in params)) continue
             const current = params[key]
 
-            if (current !== null && typeof current === "object") {
+            if (key === "gradient") {
+                const stops = gradientStops(value)
+                if (stops) params[key] = stops
+            } else if (current !== null && typeof current === "object") {
                 for (const [nested, nestedValue] of Object.entries(value || {})) {
                     if (nested in current && typeof current[nested] === typeof nestedValue) {
                         current[nested] = nestedValue
