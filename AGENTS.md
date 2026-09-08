@@ -90,6 +90,12 @@ Rules for all of it:
   it accumulates hits into `DensityBuffer` and blits one `ImageData`. The old
   `record` flag and the per-particle alpha are gone — brightness is `exposure`
   and `gamma` now.
+- **`DensityBuffer` writes pixels through a `Uint32Array` view, `PostProcess`
+  reads them as bytes.** Both are views of the same `ImageData`. The packed
+  32-bit write needs the endianness-aware `pack`; a per-channel multiply does
+  not, and `Uint8ClampedArray` clamps for free. Do not "unify" them on the
+  Uint32 path — that reintroduces byte-order handling and manual clamping in the
+  one place that does not need either.
 - **Colour work belongs in `buildTable`, never in the pixel loop.** The table is
   indexed by density and built once per frame, so the ramp is sampled a few
   thousand times rather than a few million. Phase 4's remaining effects have to

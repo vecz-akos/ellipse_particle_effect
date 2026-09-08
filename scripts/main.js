@@ -8,6 +8,7 @@ import Params from "./Params.js";
 import Panel from "./Panel.js";
 import Preset from "./Preset.js";
 import Gradient from "./Gradient.js";
+import PostProcess from "./PostProcess.js";
 
 const canvas = document.querySelector('canvas'),
     stage = document.querySelector('.stage'),
@@ -16,6 +17,7 @@ const canvas = document.querySelector('canvas'),
 const params = new Params()
 const density = new DensityBuffer(1, 1)
 const nEllipse = new NEllipse(0)
+const post = new PostProcess()
 const mf = new MouseFollower()
 
 // The URL hash carries the whole state, so a run can be linked and replayed.
@@ -203,6 +205,14 @@ const draw = () => {
             gamma: params.gamma,
             adaptation: params.adaptation,
             gradient
+        })
+        // In place, on the freshly rendered pixels — this branch is the only
+        // thing that writes imageData, so the effects cannot pile up on
+        // themselves while the simulation is paused.
+        post.apply(imageData.data, width, height, {
+            vignette: params.vignette,
+            grain: params.grain,
+            base: gradient.sample(0)
         })
         ctx.putImageData(imageData, 0, 0)
     }

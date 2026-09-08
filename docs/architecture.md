@@ -85,11 +85,22 @@ sorted here, so the panel can keep them in whatever order they were typed.
 `buildTable` asks for it every frame and the stops change only when someone edits
 them. `sample` writes into a caller-owned array — it runs once per table entry.
 
+### `scripts/PostProcess.js`
+
+Everything that happens to the finished RGB: a vignette, then grain, in one pass
+over the `ImageData` bytes — after the tone map, before `putImageData`. The
+vignette fades the edge towards a base colour the caller passes in, which
+`main.js` takes from the ramp at density 0. It holds
+the two things worth keeping between frames: the cached vignette multiplier
+(rebuilt only when the canvas or one of its settings changes) and a 256×256 noise
+tile from a `Random` of its own, read at a per-frame offset when the grain is
+animated. With both effects off, `apply` returns before touching a pixel.
+
 ### `scripts/Params.js`
 
 Every tunable in one object: canvas `aspect` and `resolution`, `particleCount`,
 `tolerance`, the `step` curve constants, the tone-map settings, the `gradient`
-stop list, and the four mode toggles. `canvasSize(freeWidth, freeHeight)` turns the aspect and
+stop list, the `vignette` and `grain` settings, and the four mode toggles. `canvasSize(freeWidth, freeHeight)` turns the aspect and
 resolution into the canvas' pixel size — the one place that decision is made.
 `Params.aspects` and `Params.resolutions` are the dropdown contents.
 
@@ -151,7 +162,9 @@ requestAnimationFrame
        └─ draw()
             ├─ clearCanvas ? density.clear()
             ├─ density.add(x, y) for each particle    ← DensityBuffer
-            ├─ density.render(imageData) + putImageData
+            ├─ density.render(imageData)              ← DensityBuffer + Gradient
+            ├─ post.apply(imageData.data)             ← vignette, then grain
+            ├─ putImageData
             └─ showFocalPoints ? stroke a cross at each focus
 ```
 

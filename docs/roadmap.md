@@ -174,8 +174,8 @@ than reading as grain.
 | **Tone map** | existing | exposure, gamma, adaptation — moved, not changed |
 | **Gradient colormap** | inside the LUT | **done** — `scripts/Gradient.js`, stop list on the Look tab |
 | **Bloom** | on density, pre-tone-map | radius, strength, threshold |
-| **Vignette** | RGB | amount, radius, softness |
-| **Grain** | RGB, last | amount, monochrome/colour, static or per-frame |
+| **Vignette** | RGB | **done** — amount, radius, softness |
+| **Grain** | RGB, last | **done** — amount, monochrome/colour, static or animated |
 
 **The gradient colormap** replaced the two-colour background→foreground lerp
 with a ramp of several stops, so the black → orange → white grading of the

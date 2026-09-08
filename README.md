@@ -18,6 +18,7 @@ edits everything else live.
 | `scripts/MouseFollower.js` | caches the cursor position |
 | `scripts/DensityBuffer.js` | per-pixel hit counts, and the tone map that turns them into an image |
 | `scripts/Gradient.js` | the colour ramp density is mapped through |
+| `scripts/PostProcess.js` | the vignette and the grain, over the finished pixels |
 | `scripts/Random.js` | the seeded PRNG every random step comes from |
 | `scripts/Params.js` | every tunable in one object, and the canvas sizing rule |
 | `scripts/Panel.js` | the control panel on the right |
@@ -46,9 +47,10 @@ scaled to fit it whole.
   constants; and at the very bottom, **Reset parameters** — every field back to
   its startup value with one centred focal point, keeping the seed.
 - **Look** — everything between the density buffer and the pixels: the tone map
-  (exposure, gamma, adaptation) and the colour ramp today, bloom, vignette and
-  grain later. None of it touches the simulation, so the usual way to work is to
-  let an image build up first and grade it afterwards.
+  (exposure, gamma, adaptation), the colour ramp, and a vignette and film grain,
+  both off until you turn them on. Bloom comes later. None of it touches the
+  simulation, so the usual way to work is to let an image build up first and
+  grade it afterwards.
 - **Render** — the seed (type one and apply it, or roll a new one), PNG save at
   the current canvas resolution, presets as JSON, and clearing the accumulated
   image. The URL follows the state on its own; the preset file is for keeping
@@ -122,6 +124,10 @@ pixel, and every stop in between is a colour the image passes on the way. Two
 stops give the plain white → black default; add a couple more and the
 black → orange → white grading of the reference renders is a setting rather than
 something done afterwards in an image editor.
+
+The stop at `0` doubles as the image's base colour: the vignette fades the edge
+towards it rather than towards black, so it works the same way on a light look
+and a dark one.
 
 Stops are sorted for you, so a position can be typed in any order, and a new
 stop lands in the widest gap with the colour the ramp already has there — adding

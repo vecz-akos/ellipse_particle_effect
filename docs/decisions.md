@@ -26,6 +26,67 @@ Paragraphs, tables, lists.
 
 ---
 
+# The vignette fades to the ramp's base colour
+
+Date: 2026-09-08
+
+Supersedes the plain multiply in "Vignette and grain on the bytes", the entry
+below. Multiplying the channels darkens towards black, which is only right when
+the ramp happens to start there — on the default white → black look it put a
+grey ring on a white page. The edge now lerps towards `gradient.sample(0)`, the
+colour of an empty canvas, so a light look gets a light vignette and a dark one
+still gets a dark vignette. With a ramp that starts at black the two are
+arithmetically identical, which is the check that was run.
+
+`main.js` passes the colour in; `PostProcess` keeps no opinion about the ramp,
+and defaults to black if nobody says otherwise.
+
+---
+
+# Vignette and grain on the bytes
+
+Date: 2026-09-08
+
+Phase 4.2, T17. `scripts/PostProcess.js` runs after the tone map, in one pass:
+vignette first, grain last. Both are off by default, and while both are off the
+pass does not run — no allocation, no loop, so today's frame cost survives the
+feature.
+
+**On `imageData.data`, not the `Uint32Array` view.** `DensityBuffer` writes
+packed pixels through a Uint32 view and needs a byte-order-aware `pack` to do it;
+a multiply-and-add per channel does not. The bytes are R, G, B, A in that order
+on every machine, and `Uint8ClampedArray` rounds and clamps on write, so the
+whole endianness question and all the manual clamping disappear. The two modules
+touch the same buffer through the view that suits each.
+
+**The vignette multiplier is cached, not computed.** A hypot and a smoothstep per
+pixel per frame is the obvious version; the mask only changes when the canvas
+size or one of the three settings does, so it is keyed on exactly that. Distance
+is measured against the half-diagonal, which makes `radius = 1` the corner at any
+aspect ratio.
+
+**It could have been cheaper still and deliberately is not.** Applying the
+falloff to the density before the tone map would be one multiply and no second
+pass — and it would make the density a non-integer, which is what the colour
+table is indexed by. The lookup table stays intact; the vignette pays for it.
+
+**Grain has its own `Random`, seeded `"grain"`.** Everything in the simulation
+draws from the one seeded stream, and a seed only reproduces an image because
+that stream is consumed in a fixed order — a render effect pulling from it would
+make the picture depend on how many frames had been drawn. Verified: a hundred
+frames of post-processing leave the simulation's stream identical.
+
+**Animated grain is the same tile read from elsewhere.** One 256×256 tile is
+generated once; a per-frame offset moves the read position, so there is nothing
+to regenerate. Monochrome grain reads one value for all three channels, colour
+grain reads three places in the tile.
+
+**The post-process is inside `draw`'s `animate` branch**, which is the only code
+that writes `imageData`. Outside it, a paused sketch would grain the previous
+frame's grain, and the image would drift while nothing was happening.
+
+---
+
 # A colour ramp instead of two colours
 
 Date: 2026-09-08

@@ -325,8 +325,56 @@ export default class Panel {
         ramp.appendChild(el("p", "hint", "Position 0 is empty canvas, 1 is the densest pixel."))
         this.syncGradientStops()
 
+        const vignette = this.section(body, "Vignette")
+        this.toggle(vignette, "Enabled", {
+            read: () => params.vignette.enabled,
+            write: (v) => params.vignette.enabled = v
+        })
+        this.slider(vignette, "Amount", {
+            read: () => params.vignette.amount,
+            write: (v) => params.vignette.amount = v,
+            min: 0, max: 1, step: .01,
+            format: (v) => v.toFixed(2)
+        })
+        this.slider(vignette, "Radius", {
+            read: () => params.vignette.radius,
+            write: (v) => params.vignette.radius = v,
+            min: 0, max: 1, step: .01,
+            format: (v) => v.toFixed(2)
+        })
+        this.slider(vignette, "Softness", {
+            read: () => params.vignette.softness,
+            write: (v) => params.vignette.softness = v,
+            min: .01, max: 1, step: .01,
+            format: (v) => v.toFixed(2)
+        })
+
+        vignette.appendChild(el("p", "hint", "The edge fades towards the ramp's colour at 0, not towards black."))
+
+        const grain = this.section(body, "Grain")
+        this.toggle(grain, "Enabled", {
+            read: () => params.grain.enabled,
+            write: (v) => params.grain.enabled = v
+        })
+        this.slider(grain, "Amount", {
+            read: () => params.grain.amount,
+            write: (v) => params.grain.amount = v,
+            min: 0, max: .5, step: .005,
+            format: (v) => v.toFixed(3)
+        })
+        this.toggle(grain, "Monochrome", {
+            read: () => params.grain.mono,
+            write: (v) => params.grain.mono = v,
+            hint: "Off: each channel gets its own noise, which reads as colour speckle."
+        })
+        this.toggle(grain, "Animated", {
+            read: () => params.grain.animated,
+            write: (v) => params.grain.animated = v,
+            hint: "Off: the grain is a still texture. On: it moves every frame."
+        })
+
         const effects = this.section(body, "Effects")
-        effects.appendChild(el("p", "hint", "Bloom, vignette and grain are the rest of Phase 4 — see docs/roadmap.md."))
+        effects.appendChild(el("p", "hint", "Bloom is the rest of Phase 4 — see docs/roadmap.md."))
     }
 
     // The modes live in a footer, outside the tabs: they are the things a

@@ -28,6 +28,11 @@ export default class Params {
             { at: 1, color: "#000000" }
         ]
 
+        // post-process, in the order it is applied: both off by default, and
+        // while they are off no pass over the pixels runs at all.
+        this.vignette = { enabled: false, amount: .5, radius: .6, softness: .5 }
+        this.grain = { enabled: false, amount: .06, mono: true, animated: false }
+
         // toggles
         this.animate = true
         this.clearCanvas = true
