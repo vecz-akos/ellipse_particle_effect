@@ -25,6 +25,7 @@ edits everything else live.
 | `scripts/Panel.js` | the control panel on the right |
 | `scripts/Preset.js` | the JSON save format, and the validation on load |
 | `scripts/main.js` | canvas, animation loop, keyboard controls |
+| `bench/bench.js` | what each render stage costs per frame; tooling, not part of the sketch |
 
 ## Quick start
 
@@ -32,6 +33,7 @@ edits everything else live.
 npm install
 npm run dev        # dev server with hot reload
 npm run build      # bundle into dist/, openable straight from the filesystem
+npm run bench      # what the render chain costs per frame, stage by stage
 ```
 
 Vite is the only dependency, and it is a devDependency — the sketch itself is
@@ -50,10 +52,12 @@ scaled to fit it whole.
 - **Look** — everything between the density buffer and the pixels: the colour
   ramp first, since that is where grading starts, then bloom, the tone map
   (exposure, gamma, adaptation), a vignette and film grain. Bloom, vignette and
-  grain are off until you turn them on, and cost nothing while they are. None of it touches the
-  simulation, so the usual way to work is to let an image build up first and
-  grade it afterwards. Bloom is the expensive one — it re-blurs the whole image
-  every frame, so expect the frame rate to drop at 4K.
+  grain are off until you turn them on, and cost nothing while they are. None of
+  it touches the simulation, so the usual way to work is to let an image build up
+  first and grade it afterwards. They cost frame rate while the exposure runs —
+  the vignette and the grain more than bloom, and all of it more at 4K — but a
+  stopped exposure is redrawn only when you change something, so grading a
+  finished image stays responsive.
 - **Render** — the seed (type one and apply it, or roll a new one), PNG save at
   the current canvas resolution, and presets as JSON. The URL follows the state
   on its own; the preset file is for keeping one on disk.

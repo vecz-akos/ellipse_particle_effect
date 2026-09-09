@@ -21,6 +21,7 @@ index.html            Vite entry point; the stage element and the canvas
 styles.css            all styling, hand-written, no framework
 vite.config.js        one setting: base "./" so builds open from the filesystem
 scripts/              the sketch — one class per file, default-exported
+bench/                the render-cost benchmark; tooling, never imported by the sketch
 docs/                 architecture, the decision log, and the roadmap
 ../imgs/              reference renders, hand-edited outside this repo (not tracked here)
 ```
@@ -96,6 +97,12 @@ Rules for all of it:
   not, and `Uint8ClampedArray` clamps for free. Do not "unify" them on the
   Uint32 path — that reintroduces byte-order handling and manual clamping in the
   one place that does not need either.
+- **`PostProcess.apply`'s two skips are exact, and must stay exact.** A vignette
+  mask of exactly 1 and a grain cell with no speck both write back the byte that
+  is already there, which is why skipping them is byte-identical. Loosening
+  either into a tolerance (`m > 0.99`, "small enough noise") changes the image
+  and is not the same optimisation. See "The post pass does the work it cannot
+  skip" in `docs/decisions.md`.
 - **Colour work belongs in `buildTable`, never in the pixel loop.** The table is
   indexed by density and built once per frame, so the ramp is sampled a few
   thousand times rather than a few million. Bloom makes the index a float and is
@@ -195,8 +202,31 @@ Rules for all of it:
 ## Verifying changes
 
 ```powershell
-npm run build     # catches import and syntax errors; the only static check there is
+npm run build              # catches import and syntax errors; the only static check there is
+npm run bench              # render cost, if you touched the render chain (~4 minutes)
+npm run bench -- --quick   # only checks that the benchmark still runs; numbers not comparable
 ```
+
+`bench/bench.js` is the one benchmark, extended rather than copied — a folder of
+per-task harnesses is how T4's and T19's numbers became unreproducible. Its
+header states the method (warm-up count, one context per process, why the post
+pass is timed as a difference); **read it before adding a measurement**, and put
+any new figure in `docs/decisions.md` next to the ones already there. Run it
+after any change to `DensityBuffer`, `Bloom`, `PostProcess` or the render path in
+`main.js`. It drives the real modules but keeps its own copy of `step`, so a
+change to `main.js` does not break it — and does not reach it either.
+
+**Comparing two implementations is not what this benchmark is for.** It reports
+what the chain costs; between two of its runs the spread is over 10%, so a
+variant timed in one run against a baseline in another loses every effect
+smaller than that. Two of the five "this did not help" results recorded under
+T21 were wrong for exactly that reason. To compare implementations, interleave
+them in one process — every variant once per round, many rounds — where the
+spread is 1-4%, and quote it next to the number. The entry "T21's negative
+results, re-measured" in `docs/decisions.md` is the worked example, and the
+figure it corrects is a reminder that **a negative result recorded as
+"do not retry" closes a door permanently** and therefore needs the stronger
+footing, not the weaker one.
 
 There are no tests, no linter and no type checker, and none of the above will
 tell you whether the change is correct — the sketch is judged visually. **Do not

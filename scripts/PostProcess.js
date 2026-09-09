@@ -55,33 +55,65 @@ export default class PostProcess {
             spread = cut < 1 ? 1/(1 - cut) : 0
             baseLuma = luma(base[0], base[1], base[2])
         }
-        const strength = speckle ? grain.amount*255 : 0
+        const strength = speckle ? grain.amount*255 : 0,
+            mono = step === 0
         // The edge fades towards the colour the ramp has at density 0 — the
         // empty canvas — not towards black. On a light look that is a light
         // vignette, and it reduces to the plain multiply when the ramp starts
         // at black.
         const [baseR, baseG, baseB] = base
 
+        // Most of this loop's work is skipped rather than done; see "The post
+        // pass does the work it cannot skip" in docs/decisions.md. Both skips
+        // are exact, not approximations — each one drops a write that would put
+        // back the byte that is already there.
         for (let y = 0, i = 0, p = 0; y < height; y++) {
+            // One noise value per cell, so the lookup and the speck happen once
+            // per cell rather than once per pixel, and a silent cell skips its
+            // whole run.
+            const rowBase = speckle ? (((y/cell)|0) & TILE_MASK)*TILE : 0
+            let cx = 0, held = 0, n = 0, ng = 0, nb = 0, silent = true
+            if (speckle) {
+                n = ng = nb = speck(noise[rowBase], cut, spread)
+                if (!mono) {
+                    ng = speck(noise[(rowBase + step) & MASK], cut, spread)
+                    nb = speck(noise[(rowBase + step*2) & MASK], cut, spread)
+                }
+                silent = n === 0 && ng === 0 && nb === 0
+            }
+
             for (let x = 0; x < width; x++, i++, p += 4) {
                 if (shade) {
                     const m = mask[i]
-                    data[p] = baseR + (data[p] - baseR)*m
-                    data[p + 1] = baseG + (data[p + 1] - baseG)*m
-                    data[p + 2] = baseB + (data[p + 2] - baseB)*m
-                }
-                if (speckle) {
-                    const weight = Math.abs(luma(data[p], data[p + 1], data[p + 2]) - baseLuma)/255
-                    if (weight > 0) {
-                        const at = (((y/cell)|0) & TILE_MASK)*TILE + (((x/cell)|0) & TILE_MASK)
-                        const scale = strength*weight
-                        const n = speck(noise[at], cut, spread)*scale
-                        data[p] += n
-                        data[p + 1] += step === 0 ? n
-                            : speck(noise[(at + step) & MASK], cut, spread)*scale
-                        data[p + 2] += step === 0 ? n
-                            : speck(noise[(at + step*2) & MASK], cut, spread)*scale
+                    // Exactly 1 is the whole inside of the vignette, and it
+                    // writes each channel back unchanged.
+                    if (m !== 1) {
+                        data[p] = baseR + (data[p] - baseR)*m
+                        data[p + 1] = baseG + (data[p + 1] - baseG)*m
+                        data[p + 2] = baseB + (data[p + 2] - baseB)*m
                     }
+                }
+                // A silent cell adds zero to three bytes that are already
+                // clamped integers.
+                if (speckle && !silent) {
+                    const r = data[p], g = data[p + 1], b = data[p + 2]
+                    const weight = Math.abs(luma(r, g, b) - baseLuma)/255
+                    if (weight > 0) {
+                        const scale = strength*weight
+                        data[p] = r + n*scale
+                        data[p + 1] = g + ng*scale
+                        data[p + 2] = b + nb*scale
+                    }
+                }
+                if (speckle && ++held === cell) {
+                    held = 0
+                    const at = rowBase + (++cx & TILE_MASK)
+                    n = ng = nb = speck(noise[at], cut, spread)
+                    if (!mono) {
+                        ng = speck(noise[(at + step) & MASK], cut, spread)
+                        nb = speck(noise[(at + step*2) & MASK], cut, spread)
+                    }
+                    silent = n === 0 && ng === 0 && nb === 0
                 }
             }
         }

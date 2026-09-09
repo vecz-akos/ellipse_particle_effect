@@ -26,6 +26,338 @@ Paragraphs, tables, lists.
 
 ---
 
+# T21's negative results, re-measured — two of them were wrong
+
+Date: 2026-09-09
+
+Raised in review of T21: the negative results in "The post pass does the work it
+cannot skip" are the weakest-supported numbers in it, and they are the ones
+recorded as "do not retry". A false negative there closes a door permanently.
+The objection was right. **Two of the five were wrong.**
+
+The method was the fault. Those figures came from separate runs of a harness,
+compared across runs. Timed properly — every variant once per round, nine
+interleaved rounds of twenty iterations in one process — the spread within a
+run is **1–4%**, not the "over 10%" that entry claims. The 10% is the spread
+*between* runs, and comparing across runs is what made a 6% effect look like
+noise.
+
+| claim in the T21 entry | median vs the old code | spread | verdict |
+| --- | --- | --- | --- |
+| hoisting the two per-pixel `if`s | +0% | 4% | **holds** — genuinely nothing |
+| removing the two divisions on their own | **+6%** | 2% | **wrong, it helps** |
+| one noise value per cell without the skip | −1% | 2% | **holds** — genuinely nothing |
+| folding `/256` and `/255` into the strength | **+27%, the fastest of all** | 2% | **wrong, it is not slower** |
+| raw `Uint8Array` with the clamping written out | 11.8 ms against 11.0 | 3–4% | **holds** — 7% slower |
+
+**Removing the divisions does help, and the shipped code already has it.** What
+was recorded as a null result is a 6% one; it is invisible in the entry only
+because the version that ships steps the column index along the scan instead of
+dividing, so the gain arrived inside another change rather than as its own line.
+No code changes here — the record does.
+
+**Folding the divisions is the fastest thing measured**, 35.7 ms against the
+37.0 of what ships, and the entry calling it slower was reading noise. **It is
+still not adopted, for a reason that is not speed:** the folded form is not
+bit-for-bit the same arithmetic, so its byte-identity rests on having checked a
+few images rather than on an argument that holds for every image. Three and a
+half percent does not buy out a provable invariant on a sketch whose whole point
+is the picture. Recorded so the option stays open and priced, rather than
+buried under a wrong number.
+
+The general lesson, which is the part worth keeping: **a negative result needs
+tighter measurement than a positive one**, because it is the one that gets
+written down as permanent. Compare variants inside one process, interleaved, and
+quote the spread next to the number.
+
+---
+
+# The browser is not slow, and that is the answer T7 was waiting for
+
+Date: 2026-09-09
+
+Every number in this log is from Node. `putImageData` is in none of them, and
+the thing that actually matters — move a slider, see the image change — had
+never been measured, because no agent working on this repo can observe it.
+
+Reported from the running app after T21: **grading is real-time.** Changing the
+ramp colours and the bloom parameters on a held exposure redraws without
+perceptible lag, at the resolutions in use. It was already acceptable before
+T21.
+
+That settles what the queue was holding T7 for. T7's dirty-pixel scheme cannot
+help grading at all — a render-parameter change dirties every pixel by
+definition — so its whole remaining benefit is to the *running* exposure, which
+is the part nobody is watching. It is the largest and riskiest change in the
+queue, and it is now buying something nobody has asked for. **T7 is parked**,
+and what would revive it is Phase 5 (exposures that run much longer) or Phase 6
+(where a frame's cost is export time), not a frame-rate complaint.
+
+Worth stating for whoever measures next: the honest limit of this benchmark is
+that it cannot see the browser. When a decision turns on felt latency, the
+measurement is a person moving a slider, and the task should say so instead of
+implying the recorded milliseconds settle it.
+
+---
+
+# The benchmark's parts do not add up across configurations
+
+Date: 2026-09-09
+
+Raised in review of T21. The parts table gives one figure per stage, and it is
+tempting to build a frame out of them — but each part is timed in one
+configuration, and a stage's cost can depend on the image it is handed. The
+benchmark now says so in its own output, under the table, rather than leaving a
+reader to discover it by adding numbers that do not match a row.
+
+Measured: `PostProcess.apply` costs 39.8 ms on a plain render and 42.1 ms on a
+bloomed one at 1080p, 148.6 against 155.2 at 4K — 4–6% more in a frame that also
+runs bloom, which is the configuration its part-time is *not* measured in.
+
+The obvious explanation is wrong and is worth recording as such. T21 made the
+pass data-dependent, so a bloomed image having fewer skippable pixels would
+explain it — except it has *more*: 44% of pixels sit exactly at the base colour
+against 41% at 1080p, 73% against 70% at 4K, and the share of the frame where
+the vignette mask is exactly 1 is 57% either way. Fewer writes, more time. What
+is left is that a frame with bloom also holds bloom's full-resolution buffers,
+so the post pass walks its bytes against a colder cache.
+
+The rule that follows: **compare a row with its own parts — that is what the
+residual table is — and never with parts from a different row.**
+
+---
+
+# The post pass does the work it cannot skip
+
+Date: 2026-09-09
+
+T21. `PostProcess.apply` is 19% faster at both resolutions, and the vignette on
+its own is 40–51% faster. The output is byte-identical — this is an
+optimisation, not a change to the look.
+
+**Two writes were doing nothing, and both are now skipped.** Neither is an
+approximation; each one drops a write that would store the byte already there.
+
+- **A vignette mask of exactly 1.** `1 - amount*smoothstep(0)` is exactly 1
+  across the whole inside of the vignette, which at the default radius is 57% of
+  the frame, and `base + (v - base)*1` returns `v` exactly for integers up to
+  255. Three clamped writes per pixel, skipped, over more than half the canvas.
+- **A silent grain cell.** At the default coverage 60% of cells produce no
+  speck, and adding zero to a byte that is already a clamped integer cannot
+  change it. Skipping also drops the luma, which is the grain's real per-pixel
+  cost.
+
+**One noise value per cell, not per pixel.** The lookup and the speck move to
+the cell boundary, which is what makes the silent-cell test cheap enough to be
+worth having. On its own this change is *not* worth having — see below.
+
+Measured in one process, the previous implementation against the new one on the
+same pixels, best of three rounds of twenty:
+
+| configuration | 1080p before → after | 4K before → after |
+| --- | --- | --- |
+| vignette and grain | 45.5 → 36.9 ms (19%) | 144.2 → 117.4 ms (19%) |
+| vignette only | 23.0 → 13.7 ms (40%) | 84.0 → 41.1 ms (51%) |
+| grain only | 33.5 → 28.9 ms (14%) | 91.0 → 89.9 ms (1%) |
+| cell 3, colour grain | 52.9 → 39.9 ms (25%) | 163.4 → 132.4 ms (19%) |
+
+And through `npm run bench`, which also moves the frame it sits in — 1080p
+settled goes from 83.8 ms to 62.4 ms with everything on:
+
+| resolution | state | `PostProcess.apply` before → after |
+| --- | --- | --- |
+| 1920×1080 | early | 41.9 → 35.6 ms |
+| 1920×1080 | settled | 43.9 → 35.8 ms |
+| 3840×2160 | early | 127.6 → 122.2 ms |
+| 3840×2160 | settled | 169.1 → 149.4 ms |
+
+**Byte-identity, verified three ways.** Twelve settings — cell 1 to 4, colour
+grain, coverage 0 and 1, a mask that is 1 everywhere and one that reaches the
+corner, each effect alone, both off, a light ramp base — compared byte for byte
+against the previous implementation at both resolutions. And the benchmark's own
+consumption checksums are unchanged from the run before the change, which
+exercises the whole chain rather than the pass alone.
+
+**Grain alone barely improves, and that is the interesting part.** At cell 1 the
+silent test flips per pixel on random noise, so the branch is unpredictable and
+costs about what it saves — 1% at 4K. At cell 3 the same test runs in predictable
+runs and the same code gains 19–25%. The skip is worth having because of the
+vignette and the larger cells, not because of the default grain.
+
+**What did not help, so it is not retried.** Every one of these was measured, at
+1080p, against the same baseline:
+
+- **Hoisting the two per-pixel `if`s into specialised loops.** No reliable gain;
+  the difference sat inside the run-to-run spread, which on this machine is over
+  10% for this loop.
+- **Removing the two integer divisions on their own.** 45.9 ms against a 51.6 ms
+  baseline, which is the same as writing `speck` out (39.0) achieved without
+  touching them. The divisions are not the cost.
+- **One noise value per cell without the skip.** 48.7 ms — worse than doing
+  neither. The per-cell bookkeeping only pays for itself once something skips.
+- **Folding the `/256` and `/255` into the strength constant.** 35.7 ms against
+  28.7 for the version it was built on, so slower as well as inexact — the
+  folded arithmetic is not bit-for-bit the same and would have needed the
+  byte check to carry it.
+- **The raw `Uint8Array` with the clamping written out.** Three writes cost
+  12.0 ms that way against 10.9 ms through the `Uint8ClampedArray`. `AGENTS.md`
+  forbids unifying the two byte paths on principle; this is the number behind the
+  rule, and it says the rule is right.
+
+**T19's structural suspicion was wrong, and this is the correction.** That entry
+blamed "three clamped read-modify-writes per pixel" against
+`DensityBuffer.render`'s single unclamped store. Timed on their own, three
+clamped writes with the vignette's arithmetic cost 10.9 ms over 2.1 Mpx against
+2.5 ms for an empty scan of the same loop — real, but nowhere near the 52 ms the
+pass was taking. The cost was never the clamping. It was doing the work at all.
+
+One correction to the entry below: it says T19's split of the pass into a
+vignette and a grain half "does not reproduce". Measured on the benchmark's
+paired footing it does — 22.0 ms and 30.7 ms at 1080p against T19's 26 and 32.
+The caution was over-stated; the split is sound, and the bench now prints it.
+
+---
+
+# The benchmark is checked in, and T19's bloom gap was the harness
+
+Date: 2026-09-09
+
+T22. `bench/bench.js`, run with `npm run bench`, replaces the throwaway harnesses
+T4 and T19 each wrote and threw away. One file, extended when a new measurement
+is needed — a folder of per-task scripts rots into a fixture that looks like it
+runs. It is named in `AGENTS.md` under "Verifying changes" so it stays working,
+imports only from `scripts/`, and adds no dependency.
+
+**Method, decided here rather than per measurement.** Five discarded warm-up
+iterations and thirty timed ones — T19 used the same, which is why its figures
+reproduce; it simply never said so. Every timed block is followed by a checksum
+over the pixels, printed, so "the JIT removed the work" is ruled out rather than
+assumed. And two things the measurement itself forced:
+
+**One context per process.** Each resolution/fill combination runs in a forked
+child that measures nothing else. **This is what T19's unexplained bloom column
+was.** Its four contexts shared one process, so the configuration rows paid for
+allocation and collection that the part timings, taken later in the same
+process, did not. The same harness code with one context per process turns a
++3.4 ms gap at 1080p and +15.9 ms at 4K into −2.4 and −1.0.
+
+Two other explanations were tested and are wrong, recorded so they are not
+retried. **It is not `buildTable`** — the hypothesis T22 offered: it costs
+0.42 ms at `top` 11171 and 0.24 ms at `top` 6158, and `top` is *smaller* at 4K
+while the gap was larger, so the sign is wrong as well as the size. **It is not
+warm-up**: 0, 1, 5, 20 and 50 warm-up iterations all give 104–105 ms for the same
+block. **It is not a polymorphic timing helper**: the same work through a helper
+that had seen all four flag combinations cost 104.7 ms against 105.4 ms through a
+dedicated one.
+
+**A stage that rewrites its own input is timed as a difference.**
+`PostProcess.apply` works in place, so repeating it runs the second pass on its
+own output; the image creeps towards the ramp's base colour, the grain's weight
+test starts skipping pixels, and the stage measures cheaper than it is. It is now
+timed as render-plus-post minus the same render alone. **This corrects T19's
+figure upward** — 52.5 → 57.9 ms at 1080p and 140.3 → 168.0 ms at 4K — which
+strengthens T21's case rather than weakening it. The bench prints a residual
+column, row minus parts, as the standing guard: T19's gap would have been visible
+on sight.
+
+The reference numbers, from `npm run bench` on this machine:
+
+| resolution | state | effects off | vignette + grain | bloom | all on |
+| --- | --- | --- | --- | --- | --- |
+| 1920×1080 | early, 25% fill | 9.2 | 46.9 | 30.3 | 72.5 |
+| 1920×1080 | settled, 59% fill | 9.8 | 65.5 | 30.2 | 83.8 |
+| 3840×2160 | early, 9% fill | 32.2 | 168.9 | 116.5 | 242.5 |
+| 3840×2160 | settled, 30% fill | 32.6 | 201.4 | 111.4 | 272.1 |
+
+| resolution | state | step | Bloom.apply | DensityBuffer.render | PostProcess.apply |
+| --- | --- | --- | --- | --- | --- |
+| 1920×1080 | early | 1.4 | 20.6 | 9.7 | 41.1 |
+| 1920×1080 | settled | 1.2 | 20.5 | 10.5 | 57.9 |
+| 3840×2160 | early | 1.4 | 79.3 | 31.7 | 127.0 |
+| 3840×2160 | settled | 1.2 | 76.8 | 32.1 | 168.0 |
+
+Residuals are 0.0 to 5.5 ms, against frames of 30 to 272 — the parts sum.
+
+**Nothing in the previous entry's conclusions changes.** The post pass is still
+the largest stage by a wide margin, still the only one that grows with fill, and
+the ordering of T21 before T7 stands. One thing does not survive: T19's split of
+the post pass into a ~26 ms vignette and a ~32 ms grain came from a difference of
+two timings in a throwaway and does not reproduce. **T21 should re-measure that
+split with the bench before optimising against it.**
+
+---
+
+# The post-process pass is the expensive one, not bloom
+
+Date: 2026-09-09
+
+T19. Measured the whole Phase 4 chain, the way "Density-to-colour lookup table"
+measured T4: Node v24.15.0, the real modules, 20 000 particles, two focal
+points, accumulating, 30-run averages. **Not the browser** — `putImageData` is
+not in any of these numbers, so read the ratios.
+
+Full frame render, milliseconds:
+
+| resolution | state | effects off | vignette + grain | bloom | all on |
+| --- | --- | --- | --- | --- | --- |
+| 1920×1080 | early, 21% fill | 9.0 | 45.9 | 27.4 | 64.5 |
+| 1920×1080 | 3000 frames, 59% fill | 8.5 | 60.8 | 30.3 | 78.9 |
+| 3840×2160 | early, 7% fill | 32.6 | 132.2 | 107.7 | 216.2 |
+| 3840×2160 | 3000 frames, 30% fill | 35.0 | 184.1 | 124.4 | 260.8 |
+
+The parts, at 3000 frames:
+
+| part | 1080p | 4K |
+| --- | --- | --- |
+| `step` — 20 000 particles | 1.3 | 1.2 |
+| `Bloom.apply` | 18.4 | 74.7 |
+| `DensityBuffer.render` | 8.5 | 33.8 |
+| `PostProcess.apply` | 52.5 | 140.3 |
+
+**The headline result contradicts what "Bloom belongs in the density" left
+behind.** That entry called bloom "the expensive one" and it was, against a tone
+map. Since vignette and grain landed, **the post pass costs about three times
+what bloom costs**: 52 ms of a 79 ms frame at 1080p. `README.md` said the same
+thing about bloom and has been corrected.
+
+Neither half of the post pass is the culprit on its own — timed as a difference
+against a bare render, the vignette is ~26 ms and the grain ~32 ms at 1080p, and
+turning both on costs less than the sum. What is expensive is the pass itself:
+three clamped read-modify-writes per pixel on the `Uint8ClampedArray`, against
+`DensityBuffer.render`'s one unclamped 32-bit store — 8.5 ms for two million
+stores versus 52 ms for the same two million pixels. It is also the only stage
+whose cost **grows with fill** (37 → 52 ms), because the grain's weight test
+skips pixels that still sit at the base colour.
+
+Bloom reproduces its T18 figure (18 ms at 1080p against 23 ms measured then,
+75 ms at 4K against 78 ms) — nothing regressed there.
+
+**The other half of the question, from T20.** While the exposure is stopped and
+nothing is touched, `update` steps nothing and `render` runs only on a raised
+`needsRender`, so a held image costs nothing at all and an edit costs at most one
+render per frame. That is read from the loop in `main.js`, not measured. So the
+frame times above are the cost **while the exposure runs**, which is also when
+nobody is grading — and the cost of grading a held image is one of these frames
+per change.
+
+**Recommendation: un-park T7, and widen it from the tone map to the post pass.**
+Sixty of the seventy-nine milliseconds at 1080p are per-pixel maps whose output
+depends only on that pixel and its coordinates — the tone map through the table,
+the vignette through its cached mask, the grain through the tile and the pixel's
+own luma. A pixel that did not change renders to the same byte it already holds,
+so one dirty-pixel list serves both stages, and both drop from two million
+pixels to twenty thousand. With bloom off that is a ~62 ms frame becoming ~2 ms.
+
+**Bloom must stay outside that scheme.** A blur reads a neighbourhood, and the
+20 000 hits per frame are scattered across the whole canvas rather than
+clustered, so a dirty *rectangle* grown by the blur radius degenerates to the
+full canvas on the first frame. With bloom on, T7 therefore leaves a floor of
+~19 ms at 1080p and ~76 ms at 4K. That floor is what the live/export split on the
+roadmap is for; it is not something T7 can fix, and micro-optimising the box
+passes further was already ruled out in T18.
+
+---
+
 # Mnemonic keys, and Colours at the top of the Look tab
 
 Date: 2026-09-09

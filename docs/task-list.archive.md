@@ -909,3 +909,181 @@ matters, the `docs/decisions.md` entry says so.
 - `New exposure` repaints immediately when pressed with the exposure stopped.
 - Moving the mouse to the panel with the exposure stopped does not move a focal
   point.
+
+---
+
+## T19 — Measure the render cost with the whole chain on
+
+- **Kind:** measurement
+- **Roadmap:** Phase 4.4
+- **Touches:** none — measurement only
+- **Status:** done
+- **Blocked by:** T18, which has landed
+
+> **Partly answered already.** Bloom's own cost was measured when T18 landed and
+> the figure sits in its `docs/decisions.md` entry — do not re-measure it from
+> scratch. What is still missing is the whole chain together, at both resolutions,
+> and the effect of T20: rendering is change-driven now, so the honest question is
+> no longer "what does a frame cost" but "what does a frame cost **while the
+> exposure is running**, and how often is one drawn at all while it is stopped".
+> Answer that shape of question, not T4's.
+
+**Prompt**
+
+> T4 measured the render cost when `draw` was a table lookup and a blit. Phase 4
+> adds a separable Gaussian over the density, an extra pass over the pixels, and
+> a wider colour table. Measure the same way T4 did, at 1080p and at 4K, with the
+> effects off, with vignette and grain on, and with bloom on, and write the
+> numbers into `docs/decisions.md`.
+>
+> The decision that hangs on it: T7 (repaint only the pixels that changed) was
+> parked as premature, and bloom is the thing that would un-park it — though a
+> blur reads a neighbourhood, so a dirty-rectangle scheme has to grow the rectangle
+> by the blur radius before it is correct. The alternative is splitting live from
+> export: a cheaper preview while the look is being tuned, full quality only on
+> save. Recommend one, with the measurement behind it.
+>
+> Change no behaviour in this task. If the numbers say nothing needs doing, that
+> is the result — record it and close it.
+
+**Done when**
+
+- Frame times for the three configurations at two resolutions are in
+  `docs/decisions.md`.
+- T7's status carries a recommendation backed by a number rather than a guess.
+
+---
+
+## T22 — Check the benchmark into the repo
+
+- **Kind:** measurement
+- **Roadmap:** infrastructure
+- **Touches:** `bench/`, `package.json`, `AGENTS.md`, `README.md`
+- **Status:** done
+
+**Prompt**
+
+> T19 exists because T4's numbers went stale and its harness was a throwaway that
+> no longer existed. T19's harness was also a throwaway, so **its numbers are
+> already as unreproducible as T4's were** — the next change to the render chain
+> will need a third measurement task written from scratch. Stop the cycle: check
+> the harness in.
+>
+> **One benchmark, not a folder of scripts.** A directory of per-task harnesses
+> rots: in six months none of them run, and a benchmark that does not run is
+> worse than none because it looks like a fixture. One file, extended when a new
+> measurement is needed. Put it in **`bench/`** — `scripts/` is the sketch's own
+> source directory and must not be reused for tooling. Add an `npm run bench`
+> script, and name it in `AGENTS.md` under "Verifying changes" alongside
+> `npm run build`, so it is something that gets run and therefore stays working.
+>
+> It must reproduce T19's method, because comparability across time is the entire
+> point:
+>
+> - the real modules, a fixed seed, 20 000 particles, two focal points
+> - both resolutions (1920×1080 and 3840×2160) and both fill states — early, and
+>   after 3000 accumulated frames
+> - each stage timed separately: `step`, `Bloom.apply`, `DensityBuffer.render`,
+>   `PostProcess.apply` — and the whole frame
+> - **discarded warm-up iterations before the timed runs.** V8 runs the first
+>   iterations in baseline; without warm-up the absolute numbers are wrong and
+>   the ratios are noisy. T19 reported 30-run averages without saying whether it
+>   warmed up — decide it here and write the number down.
+> - **the timed loop's result must be consumed** (a checksum over the output
+>   buffer is enough), or the JIT can eliminate the work and hand you an
+>   impossibly good number.
+>
+> The fake DOM this needs (an `ImageData` stand-in) is about twenty lines written
+> by hand. **No packages** — the dependency rule in `docs/decisions.md` applies to
+> tooling as much as to the sketch.
+>
+> Print the numbers in the same table shape the decisions entries use, so a
+> result can be pasted in without reformatting.
+>
+> **A discrepancy to resolve while you are here.** In T19's table the "bloom"
+> column exceeds `DensityBuffer.render` plus `Bloom.apply` by 3.4 ms at 1080p and
+> **15.9 ms at 4K** — a systematic gap that grows with resolution, not noise. The
+> likely cause is that bloom raises the summed buffer's maximum, so `top` grows
+> and `buildTable` refills more entries per frame. Confirm it or find the real
+> cause, and record it: an unexplained systematic gap in a measurement is how a
+> methodology bug hides.
+
+**Done when**
+
+- `npm run bench` runs from a clean checkout and prints the full table.
+- Re-running it reproduces T19's figures within noise, or the difference is
+  explained in `docs/decisions.md`.
+- The warm-up and consumption strategy is stated in the file itself, not only in
+  a commit message.
+- The bloom-column discrepancy is explained.
+- No new dependency was added.
+
+---
+
+## T21 — Make the post-process pass cheaper per pixel
+
+- **Kind:** performance
+- **Roadmap:** Phase 4 addendum
+- **Touches:** `scripts/PostProcess.js`
+- **Status:** done
+
+> **Two corrections from T22, which landed after this was written.** The
+> figures below are T19's; the benchmark's are slightly higher — **57.9 ms of an
+> 84 ms frame at 1080p and 168.0 ms at 4K** — because T19 timed the post pass on
+> its own output and it measured cheaper than it is. Work from
+> `npm run bench` and the entry "The benchmark is checked in, and T19's bloom gap
+> was the harness", and **do not write another harness**: extend `bench/bench.js`.
+>
+> And the vignette-versus-grain split quoted below **does not reproduce**. It came
+> from a difference of two timings in a throwaway. Re-measure it with the bench
+> before optimising against it — it is the number that says which half to attack.
+
+**Prompt**
+
+> T19 measured `PostProcess.apply` at **52.5 ms of a 79 ms frame at 1080p**, and
+> 140.3 ms at 4K — three times what bloom costs at 1080p, and the only stage
+> whose cost grows with fill. The numbers and the method are in "The post-process
+> pass is the expensive one, not bloom" in `docs/decisions.md`.
+>
+> **Why this comes before T7, which looks like the bigger win.** T7's
+> dirty-pixel scheme only applies while the render parameters are unchanged.
+> Grading a held image changes exposure, gamma, the ramp or the vignette — and
+> every one of those alters every pixel's output, so the dirty set is the whole
+> canvas and T7 saves nothing. Since T20, grading a paused image is where the
+> user actually spends time, and it costs one full frame per adjustment. **This
+> task is the only one that makes that faster**, and unlike T7 it helps the
+> running exposure too.
+>
+> The per-pixel work to attack, from the T19 report: two integer divisions
+> (`y/cell`, `x/cell`), a luma computation, and a `Math.abs`, on every pixel.
+> Divisions by a value that changes once per frame are the obvious candidates —
+> reciprocal multiply, or step the tile indices along the scan rather than
+> recomputing them per pixel, since x advances by one and y is constant across a
+> row. Measure each change; do not assume any of them helps.
+>
+> **The structural cost, which may matter more than the arithmetic.** T19 also
+> found that the vignette and the grain together cost *less* than the sum of
+> their individual costs, and that `DensityBuffer.render` does two million
+> unclamped 32-bit stores in 8.5 ms while this pass does two million clamped
+> read-modify-writes in 52. That points at the memory access pattern, not the
+> maths: three byte-wide read-modify-writes per pixel through a
+> `Uint8ClampedArray`. Whether a `Uint32Array` view can be used here is **not**
+> obvious and `AGENTS.md` explicitly forbids unifying the two paths on the
+> Uint32 side — that rule exists because the clamping and the byte order come
+> free on the byte path. If you want to revisit it, measure first and put the
+> number in the decisions entry; do not change it on principle.
+>
+> **Output must stay pixel-identical** at the same seed and parameters, verified
+> by comparing buffers rather than by eye. This is an optimisation, not a change
+> to the look.
+>
+> **Not in this task:** the dirty-pixel scheme (T7), and any live-versus-export
+> quality split. Both were considered here and belong elsewhere.
+
+**Done when**
+
+- `PostProcess.apply` is measurably faster at 1080p and 4K, at both fill levels
+  T19 used, with the numbers in `docs/decisions.md`.
+- Output is byte-identical to the current implementation at the same seed and
+  parameters.
+- Every change that did **not** help is named in the entry, so it is not retried.
