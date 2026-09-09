@@ -26,6 +26,56 @@ Paragraphs, tables, lists.
 
 ---
 
+# Run state stays off `Params`
+
+Date: 2026-09-09
+
+T23b, correcting two things T23 got wrong and one it left rough.
+
+**`Params.animation` holds settings only.** `playing` has moved to the
+`Animation` instance, next to `time`. T23 put it in `Params` and argued that an
+animation is part of the image rather than of the session; that was wrong for a
+plain reason the entry below did not weigh — `Preset.capture` walks every key of
+`Params`, so **a link saved mid-playback started the timeline on open**, which is
+exactly what `exposing` sits in `SKIP` to prevent.
+
+The fix could have been a nested skip list. It is not, because the division that
+actually holds is *settings versus run state*, and expressing it as "run state is
+not in `Params`" makes it structural: there is no code path in `Preset` that can
+reach a field that is not there, so no future key has to be remembered and added
+to a list. `Preset` is untouched by this change, which is the strongest form of
+"easier to read".
+
+The consequence is that loading a preset has to stop the transport explicitly,
+which `applyPreset` and `resetParams` now do — along with seeking to 0, so a
+loaded animation starts at its beginning. `exposing` keeps its old arrangement:
+moving it would be a second change with its own risk, and `SKIP` already covers
+it.
+
+**Track ids restart with the track list.** `syncTracks` resets the counter, so
+the same preset gives `t1…tN` however many points were added before it was
+loaded. T23 left the counter monotonic, which meant the identity a modulator will
+seed its `Random` from depended on what the user happened to do earlier in the
+session — the same preset would have produced a different film in a fresh tab
+than in a busy one. Carrying identity in the file itself is T24's problem, since
+T24 is what gives a track content worth saving.
+
+**A loop's clock runs 0…span-1.** `advance` wraps `span` back to 0, so `span` is
+a step a looping timeline never occupies — but `seek` clamped *to* `span`, and
+advancing from there landed on 1, silently skipping the first step of the run.
+`seek` now takes the loop flag and clamps to `span - 1` for a loop; a one-shot
+still ends on `span`, because that is what `finished` recognises. The scrub
+slider's maximum follows the same rule, so the UI cannot offer a position the
+transport will not hold.
+
+Verified by extending T23's two suites rather than writing new ones: 36 model
+checks and 27 panel checks, including that a captured document contains no
+`playing` anywhere, that a `playing` hand-edited into a preset file finds nothing
+to write to, that `syncTracks(3)` gives the same ids in a fresh instance and a
+busy one, and that scrubbing a loop to its far right then advancing lands on 0.
+
+---
+
 # The animation clock counts steps
 
 Date: 2026-09-09

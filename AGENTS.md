@@ -102,6 +102,13 @@ Rules for all of it:
   timeline — that is deliberate, not a bug to fix. Wall-clock time would make a
   run depend on the machine and break the reproducibility export needs. See "The
   animation clock counts steps" in `docs/decisions.md`.
+- **`Params.animation` is settings only; the transport's run state lives on the
+  `Animation` instance.** `Preset` walks every key of `Params`, so a field put
+  there is a field that gets saved — that is how a link once started the timeline
+  on open. `duration` and `loop` belong in `Params`; `playing` and `time` do not.
+  A looping clock also runs `0…duration-1`, never `duration`, because `advance`
+  wraps — `seek` and the scrub slider both respect that. See "Run state stays off
+  `Params`" in `docs/decisions.md`.
 - **Animation tracks are bound to focal points by index, and
   `NEllipse.addFocalPoint` unshifts.** A new point takes index 0, so
   `addFocalPoint` inserts a track at 0 and `removeFocalPoint` removes the one at

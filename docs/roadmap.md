@@ -279,41 +279,76 @@ rather than tied to the run state. Phase 5 does not have to decide this; it has
 to use it. What remains is the smaller question of which mode the *timeline*
 runs in: real time while scrubbing, fixed-step while exporting.
 
+### The words this phase uses
+
+Fixed vocabulary, because the parts are easy to mix up — a **dwell** in
+particular is the *opposite* of movement, not a kind of it.
+
+| word | what it is | does the point move? |
+| --- | --- | --- |
+| **station** | a position and a weight, at one time on the timeline | — |
+| **leg** | the transition between two stations; position and weight interpolate across it | yes, as planned |
+| **dwell** | the time spent held at a station; position and weight stay put | no |
+| **phase** | collective noun: a leg or a dwell | — |
+| **track** | one focal point's whole plan — a sequence of stations | — |
+| **modulation** | a wobble added on top of wherever the point already is | yes, off-plan |
+
+A track alternates in time, always: `dwell → leg → dwell → leg → dwell`. **Path**
+means a whole track's shape; the piece between two stations is a **leg** — the
+two are not interchangeable, and calling both "path" is what makes this confusing
+to talk about.
+
+Modulation sits perpendicular to all of it. It does not change the plan, it
+perturbs the result — at amplitude zero, exactly the stations remain.
+
 ### What gets animated
 
-- **Position**, along a path: a straight segment or a Bézier curve, with control
+- **Position**, along a leg: a straight segment or a Bézier curve, with control
   points dragged on the canvas and the numbers in the panel.
 - **Weight**, on the same timeline. This is not a lesser feature than position —
   animating a point's weight changes `d`, so the figure **breathes** in place
   rather than travelling, which is a different family of images entirely.
-- **Dwell.** A path is segments *and* holds: pause at a control point for a
-  given time so the figure settles and the exposure builds density there. Without
-  dwell, a moving focus draws an even smear; with it, the stops become the bright
-  structure.
-- **Modulation** — a layer *on top of* a path, not an alternative to it. The
-  path gives the trajectory, the modulation gives it character, and they
+- **Dwell.** A track is legs *and* holds: stand still at a station for a given
+  time so the figure settles and the exposure builds density there. Without
+  dwell, a moving focus draws an even smear; with it, the stations become the
+  bright structure.
+- **Modulation** — a layer *on top of* the plan, not an alternative to it. The
+  track gives the trajectory, the modulation gives it character, and they
   compose. Several kinds, all sharing an **amplitude** control so they can be
   dialled to nothing:
 
   | kind | parameters | what it gives |
   | --- | --- | --- |
-  | sine, perpendicular to the path | amplitude, frequency, phase | a predictable wave along the trajectory — the point weaves instead of sliding |
-  | two sines, on x and y | amplitude, two frequencies, phase | circles and Lissajous figures; a point can orbit while the path carries it |
+  | sine, perpendicular to the leg | amplitude, frequency, phase | a predictable wave along the trajectory — the point weaves instead of sliding |
+  | two sines, on x and y | amplitude, two frequencies, phase | circles and Lissajous figures; a point can orbit while the leg carries it |
   | smooth random walk | amplitude, how fast it wanders | organic drift that never repeats but is not twitchy |
   | per-frame tremor | amplitude | the actual shake — small, fast, and the least predictable |
-  | weight pulse | amplitude, frequency | the figure breathes on a timer rather than along a path |
+  | weight pulse | amplitude, frequency | the figure breathes on a timer rather than along a leg |
 
   Predictable and random are both wanted, so treat this as a small set of
   interchangeable modulators rather than one "jitter" slider.
 
-  **Modulation matters most during a dwell.** A point held perfectly still burns
-  a dead spot; a point held still while it trembles or pulses keeps drawing
-  structure in one place, which is where the bright detail should come from.
+**A modulator belongs to a phase, not to a track.** This is the one structural
+decision in the modulation design, and it follows from what the two phases are:
 
-  **Every random modulator draws from its own `Random`, never the
-  simulation's** — the same rule grain follows. Pulling from the simulation
-  stream would make the particle motion depend on how long the animation ran, and
-  a seed would stop reproducing a film.
+- **During a dwell the point is standing still.** Unmodulated it burns a dead
+  spot. What is wanted here is trembling, small orbiting, a weight pulse — the
+  point keeps drawing *in one place*, which is where the bright detail comes
+  from. This is the most valuable place a modulator can sit.
+- **During a leg the point is already moving.** Here a modulator shapes the
+  *trajectory* — a perpendicular wave, an orbit carried along the line. Different
+  amplitude, different frequency, different intent.
+
+Setting one modulator for a whole track would force those two to share numbers,
+and the compromise is worse than either. So each dwell and each leg may carry its
+own, with a **track-level default that phases inherit** and can override — so a
+twenty-phase track is not twenty forms to fill in, but the places that matter can
+differ.
+
+**Every random modulator draws from its own `Random`, never the simulation's** —
+the same rule grain follows. Pulling from the simulation stream would make the
+particle motion depend on how long the animation ran, and a seed would stop
+reproducing a film.
 
 Worth considering later, not now: the **step-curve constants** on the timeline.
 Animating `bias` changes how tightly particles hug the curve, so the figure could
@@ -349,17 +384,104 @@ its own decision with its own entry, not a detail of path work.
 
 ### The Playback tab
 
-Scrub the timeline, set per-point paths, dwells and durations, loop or one-shot.
-Path editing on the canvas, numbers in the panel, and the same rule the rest of
-the panel follows: every tunable lives in `Params`, and `Panel.sync()` restores
-all of it.
-
 **The transport half is built (T23).** Duration, play/pause, loop or one-shot and
 a scrub are on the tab, and `scripts/Animation.js` holds the clock and one track
 per focal point. The clock counts simulation steps rather than milliseconds, so
 pausing the exposure pauses the timeline — see "The animation clock counts steps"
-in `docs/decisions.md`. What is left on this tab is the per-point half: paths,
+in `docs/decisions.md`. What is left is the per-point half: stations, legs,
 dwells and modulators.
+
+**It stays in the right-hand panel. There is no timeline strip along the bottom
+of the window.** A bottom strip is where an editor puts time when it wants to
+show *proportions* across many tracks at once; what this tab needs is an ordered
+list, which reads better in a narrow tall column than in a wide short one. The
+panel is not a compromise here, it is the better shape for the model below.
+
+**One global time.** Every track lives in the single `params.animation.duration`
+already on the tab, and station times are absolute steps within it. A track whose
+last station comes early simply holds there to the end. Station times **snap to
+other tracks' station times**, so points can be made to arrive together without
+typing matching numbers — which is what makes a figure move as one rather than as
+several independent points.
+
+**The station list *is* the track — legs are not separately creatable.** If
+stations and legs were both things you add, the tab could hold nonsense: a leg
+with no endpoint, a gap between two stations, an ambiguous order. Instead each
+row is a station carrying two things, what happens *here* and how it gets to the
+*next* one:
+
+```
+1  (960, 540)  w 300   dwell 90
+   ↓ curve, 240 steps
+2  (1240, 400) w 380   dwell 0
+   ↓ straight, 180 steps
+3  …
+```
+
+A leg then cannot exist half-made, deleting a station rejoins its neighbours on
+its own, and there is no second list to keep in step. The last station has no
+"to next" — in loop mode it joins back to the first.
+
+**Selection, not nesting.** Tab → section → point → station → fields is four
+levels of accordion in a narrow column, and unusable by the third. One track is
+open at a time: a track selector above, that track's stations below. The
+**canvas is also the selector** — `pickFocalPoint` in `scripts/main.js` already
+does the hit test, so clicking a point to open its track is nearly free, and the
+same selection then drives both the Bézier handles on the canvas and the numbers
+in the panel. Selection is **interface state, not `Params`** — the same category
+as `showFocalPoints` and `followFocalPoint`, which are deliberately not saved.
+
+**A per-track mini time bar.** An ordered list shows sequence but not proportion:
+nothing in it says whether station 2 falls early or late, or whether two tracks
+coincide. A ~16px strip in each track's header — dwells as blocks, legs as lines,
+a marker at the current time, click to seek — fits the panel width and gives back
+the one thing a bottom strip would have provided. Stacked, several tracks' strips
+show at a glance what lines up.
+
+The canvas carries the *spatial* view alongside it: the track's curve, markers at
+the stations, and a dot at the current time.
+
+**No track is the normal state, and it must stay usable.** Most points will never
+be animated; a point without a track simply stands where it is, and the existing
+by-hand workflow is unchanged. The list therefore opens on "no track — Add
+station", not on an empty form.
+
+### Editing rules on the Playback tab
+
+Two rules, both from the user, and both with a reason worth keeping:
+
+- **Editing only while the timeline is stopped.**
+- **A station the timeline has already passed cannot be edited.** To change one,
+  scrub back to it first.
+
+The second looks like a restriction and is actually honesty: **the exposure
+accumulates.** What is already burned into the image cannot be un-burned, so a
+panel that let a past station be rewritten would state one thing while the image
+showed another, silently. Locking it keeps the plan and the picture the same
+object.
+
+Four consequences the implementation has to get right:
+
+- **The lock is in the interface, not in the data.** `Animation` has no notion of
+  a past; presets and the URL restore every station regardless. Only the panel
+  refuses the edit — do not bake this into the model.
+- **A leg in progress is half locked.** With the clock between two stations, the
+  origin is past and frozen while the destination is future and editable. So a
+  point can be re-aimed mid-flight, which falls out of the rule for free and is
+  worth keeping rather than special-casing away.
+- **Scrubbing back does not clear the image.** Re-running a stretch draws over
+  what is already there — sometimes deliberately, to brighten a trace by
+  repeating it. The tab has to say so, because it is otherwise a surprise.
+  Clearing stays a separate, explicit action.
+- **This settles the two-writers trap** that path work would otherwise walk into:
+  a point under animation and a point under the cursor are two writers of one
+  position. With editing confined to a stopped timeline there is only ever one —
+  while playing, dragging writes nothing; while stopped, dragging moves the
+  selected station. The one gap is dragging while the clock sits mid-leg, where
+  there is no station to move: refuse it, and say to scrub onto a station.
+
+Everything else follows the rule the rest of the panel follows: every tunable
+lives in `Params`, and `Panel.sync()` restores all of it.
 
 ### Timelapse export, and what it will force
 

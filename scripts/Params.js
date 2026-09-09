@@ -38,10 +38,13 @@ export default class Params {
 
         // playback. duration is in simulation steps, not seconds: the timeline's
         // clock is the step counter, so the same transport input always gives
-        // the same animation. The current time is runtime state and lives on the
-        // Animation instance, not here. See "The animation clock counts steps"
-        // in docs/decisions.md.
-        this.animation = { duration: 600, loop: true, playing: false }
+        // the same animation.
+        //
+        // Settings only. Whether the timeline is running and where the playhead
+        // sits are runtime state on the Animation instance — keeping them out of
+        // here is what stops a preset from carrying them. See "Run state stays
+        // off Params" in docs/decisions.md.
+        this.animation = { duration: 600, loop: true }
 
         // exposing: the image is being fed — particles step and their hits are
         // counted. Stopping it freezes the picture, not the app; the look can

@@ -1152,3 +1152,60 @@ matters, the `docs/decisions.md` entry says so.
   transport input produces the same step count.
 - `Panel.sync()` restores the transport, and a saved preset round-trips it.
 - Nothing moves yet, and no focal point is added or removed by the animation.
+
+---
+
+## T23b — Two corrections to the timeline
+
+- **Kind:** fix
+- **Roadmap:** Phase 5.1
+- **Touches:** `scripts/Preset.js`, `scripts/Animation.js`
+- **Status:** done
+- **Blocked by:** —
+
+**Prompt**
+
+> Two defects found reviewing T23. Both are small, and both get harder to fix
+> once paths exist, so they come first.
+>
+> **1. The transport's run state is being saved.** `Preset.capture` walks every
+> key in `Params` except the three in `SKIP` — `exposing`, `followFocalPoint`,
+> `showFocalPoints` — and `params.animation` is not one of them, so
+> `animation.playing` goes into saved files and into the URL hash. `strip` keeps
+> it too, since `true` differs from the default. The result: **opening a link
+> saved mid-playback starts the timeline immediately**, because `exposing`
+> defaults to `true`. That is exactly the behaviour `exposing` is in `SKIP` to
+> prevent, and the README already promises it ("whether the simulation is running
+> … is not saved").
+>
+> `duration` and `loop` are settings and must keep being saved. Only `playing` is
+> run state. `SKIP` is a flat set of top-level keys and this one is nested, so it
+> needs a small extension — a nested skip list, or moving the flag out of the
+> group. Pick whichever leaves `Preset` easier to read, and say which in the
+> commit.
+>
+> **2. Track identities are not reproducible across a load.** `nextId` only ever
+> counts up, and `syncTracks` mints fresh ids, so the same preset gives `t1…tN`
+> in a fresh tab and `t7…` in a tab where points were added first. `Animation.js`
+> says in its own comment that the identity is what will seed a modulator's
+> `Random` — so as written, T25 would make the same preset produce a different
+> film depending on what the user did before loading it, which is the whole
+> property the step-counted clock exists to protect.
+>
+> Reset the counter when the track list is replaced wholesale: after
+> `syncTracks(n)` the ids should be the same every time. That is enough here.
+> Carrying identity through the file itself is T24's problem, since T24 is what
+> gives a track content worth saving.
+>
+> **Also worth a line, not worth a fix on its own:** `advance` in loop mode
+> wraps `span → 0`, so the clock never reads `span`; but `seek` clamps *to*
+> `span`, and advancing from there lands on 1 rather than 0, skipping a step.
+> Clamp `seek` to `span - 1` in loop mode, or note why it does not matter.
+
+**Done when**
+
+- Saving a preset while the timeline plays, then loading it, leaves the
+  transport stopped; `duration` and `loop` still round-trip.
+- `syncTracks(n)` produces the same track ids every time it is called with the
+  same `n`.
+- No behaviour change while nothing is animated yet.

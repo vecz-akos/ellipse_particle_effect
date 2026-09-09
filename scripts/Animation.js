@@ -6,10 +6,12 @@
 // throws away the reproducibility the seeded Random exists for. See "The
 // animation clock counts steps" in docs/decisions.md.
 //
-// The settings live in Params (duration, loop, playing) and are passed in, the
-// way Bloom and PostProcess take theirs. What lives here is the runtime state
-// the user does not edit and a preset does not carry: the current time, and the
-// tracks.
+// The settings live in Params (duration, loop) and are passed in, the way Bloom
+// and PostProcess take theirs. What lives here is the runtime state a preset
+// must not carry: whether the transport is running, where the playhead sits, and
+// the tracks. Preset walks Params, so anything kept off Params cannot be saved
+// by any future code path — see "Run state stays off Params" in
+// docs/decisions.md.
 
 // A track per focal point. It holds an identity and nothing else — T24 adds a
 // path and a weight to it, T25 a stack of modulators, and the identity is what
@@ -19,6 +21,7 @@ const track = (id) => ({ id })
 export default class Animation {
     constructor() {
         this.time = 0
+        this.playing = false
         this.tracks = []
         this.nextId = 1
     }
@@ -47,8 +50,15 @@ export default class Animation {
     // For the paths that replace the whole figure at once — a preset, a reset.
     // Order is not preserved because there is no order to preserve: the points
     // that were there are gone.
+    //
+    // The counter restarts, so the same preset gives the same ids however many
+    // points were added before it was loaded. A modulator seeds its Random from
+    // the track's identity, so an id that depended on what the user did earlier
+    // would make one preset produce different films — the property the
+    // step-counted clock exists to protect.
     syncTracks(count) {
         this.tracks = []
+        this.nextId = 1
         for (let i = 0; i < count; i++) this.tracks.push(this.newTrack())
     }
 
@@ -73,9 +83,15 @@ export default class Animation {
         return true
     }
 
-    seek(time, duration) {
+    // A loop's clock runs 0…span-1, because `advance` wraps span back to 0 — so
+    // scrubbing to `span` would put the playhead on a step the loop never
+    // occupies, and the next advance would land on 1 rather than 0, skipping the
+    // first step of the run. A one-shot does sit on `span`: that is its end, and
+    // `finished` is how it is recognised.
+    seek(time, duration, loop=false) {
         const span = Animation.span(duration)
-        this.time = Math.min(span, Math.max(0, Math.round(time)))
+        const last = loop ? span - 1 : span
+        this.time = Math.min(last, Math.max(0, Math.round(time)))
     }
 
     progress(duration) {

@@ -202,7 +202,7 @@ const update = () => {
     // Guarded inside, like every other per-frame DOM write. It runs while the
     // transport is on and for one frame after it stops, so the button that a
     // finished one-shot just released still flips back.
-    if (params.animation.playing || panel.shownPlaying) panel.refreshTransport()
+    if (animation.playing || panel.shownPlaying) panel.refreshTransport()
 
     if (hashDueAt && performance.now() >= hashDueAt) writeHash()
     window.requestAnimationFrame(update)
@@ -226,9 +226,9 @@ const step = () => {
     // reads N. It runs only from here, so it advances exactly when the image is
     // being fed and never in wall-clock time — see "The animation clock counts
     // steps" in docs/decisions.md.
-    if (params.animation.playing) {
+    if (animation.playing) {
         if (animation.advance(params.animation.duration, params.animation.loop)) {
-            params.animation.playing = false
+            animation.playing = false
         }
     }
 }
@@ -357,9 +357,11 @@ const applyPreset = (data) => {
     if (preset.width && preset.height) rescaleFocalPoints(preset.width, preset.height)
     applyDefaultWeight()
     // The point list was replaced wholesale, so there is no track order to
-    // preserve; the timeline starts at the beginning of the restored animation.
+    // preserve; the timeline starts at the beginning of the restored animation,
+    // stopped. A preset carries the animation's settings, never its run state.
     animation.syncTracks(nEllipse.numberOfFocalPoints)
-    animation.seek(0, params.animation.duration)
+    animation.playing = false
+    animation.seek(0, params.animation.duration, params.animation.loop)
     panel.syncFocalPoints()
     panel.sync()
     applySeed(preset.seed || random.seed)
@@ -374,7 +376,8 @@ const resetParams = () => {
     resizeCanvas()
     nEllipse.focalPoints = []
     animation.syncTracks(0)
-    animation.seek(0, params.animation.duration)
+    animation.playing = false
+    animation.seek(0, params.animation.duration, params.animation.loop)
     applyDefaultWeight()
     addFocalPoint(Math.round(width/2), Math.round(height/2))
     panel.sync()

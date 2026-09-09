@@ -547,20 +547,23 @@ export default class Panel {
 
         const transport = el("div", "modes")
         this.playButton = this.toggleButton(transport, (on) => on ? "Pause" : "Play", {
-            read: () => params.animation.playing,
+            read: () => animation.playing,
             write: (on) => {
                 // Pressing play on a finished one-shot starts it again rather
                 // than leaving it sitting on its last step.
                 if (on && animation.finished(params.animation.duration, params.animation.loop)) {
-                    animation.seek(0, params.animation.duration)
+                    animation.seek(0, params.animation.duration, params.animation.loop)
                 }
-                params.animation.playing = on
+                animation.playing = on
             },
             hint: "The timeline advances one step per simulation step, so it only runs while the exposure does (space)"
         })
         this.toggleButton(transport, (on) => on ? "Loop" : "One-shot", {
             read: () => params.animation.loop,
             write: (on) => params.animation.loop = on,
+            // The reachable end of the timeline differs between the two: a loop
+            // never occupies the last step, it wraps past it.
+            change: () => this.syncTransport(),
             hint: "One-shot stops at the end; loop wraps back to the start"
         })
         timeline.appendChild(transport)
@@ -575,7 +578,7 @@ export default class Panel {
 
         this.scrubInput = this.slider(timeline, "Time", {
             read: () => animation.time,
-            write: (value) => animation.seek(value, params.animation.duration),
+            write: (value) => animation.seek(value, params.animation.duration, params.animation.loop),
             min: 0, max: Math.max(1, Math.round(params.animation.duration)), step: 1,
             format: (value) => String(Math.round(value)),
             // The readout only repaints itself while the transport runs, so a
@@ -594,17 +597,21 @@ export default class Panel {
     // Not on a per-frame path: the scrub's range follows the duration, and a
     // duration written from outside can leave the current time past the end.
     syncTransport() {
-        const duration = Math.max(1, Math.round(this.params.animation.duration))
-        this.scrubInput.max = duration
-        if (this.animation.time > duration) this.animation.seek(duration, duration)
+        const { duration, loop } = this.params.animation
+        const span = Math.max(1, Math.round(duration))
+        // A loop wraps past its last step, so that step is not a position the
+        // slider should be able to offer.
+        this.scrubInput.max = loop ? span - 1 : span
+        this.animation.seek(this.animation.time, span, loop)
         this.refreshTransport()
     }
 
     // Runs every frame while the timeline plays, so every write is guarded —
     // see the per-frame DOM rule in AGENTS.md.
     refreshTransport() {
-        const { duration, playing } = this.params.animation
-        const time = this.animation.time,
+        const { duration } = this.params.animation
+        const playing = this.animation.playing,
+            time = this.animation.time,
             span = Math.max(1, Math.round(duration))
 
         setNumber(this.scrubInput, time)

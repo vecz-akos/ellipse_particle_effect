@@ -150,9 +150,11 @@ and reads no globals.
 
 ### `scripts/Animation.js`
 
-The timeline. Owns the current time and one track per focal point; the settings
-it runs on — duration, loop, playing — live in `Params` and are passed to
-`advance` and `seek`, the way `Bloom` and `PostProcess` take theirs. **Time is
+The timeline. Owns the run state — whether the transport is playing, where the
+playhead sits — and one track per focal point; the settings it runs on, duration
+and loop, live in `Params` and are passed to `advance` and `seek`, the way
+`Bloom` and `PostProcess` take theirs. Keeping run state off `Params` is what
+stops `Preset` from saving it. **Time is
 counted in simulation steps**, one unit per `step`, so a run reproduces exactly
 and a paused exposure holds the timeline with it. Tracks are bound to focal
 points by index and carry only an identity so far: `insertTrack` and

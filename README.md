@@ -131,9 +131,9 @@ on. **Load…** reads one back: the canvas is resized to the preset's aspect and
 resolution, the figure is scaled into it, and the run restarts from the saved
 seed. Whether the simulation is running, whether a point follows the mouse and
 whether the focal-point crosses are shown are not saved; everything that shapes
-the image is. That includes the timeline's duration, loop mode and whether it is
-playing — an animation is part of the image, not part of your session — but not
-where the playhead happens to be sitting.
+the image is. The timeline's duration and loop mode are saved; whether it is
+running and where the playhead sits are not, so a loaded preset starts at the
+beginning, stopped.
 
 The file keeps every field, while the link carries only what differs from the
 defaults — a link is shared and ephemeral, a saved file is what you come back to
