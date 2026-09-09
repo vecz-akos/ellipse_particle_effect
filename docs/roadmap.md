@@ -121,12 +121,29 @@ That refactor is part of this phase, not a separate one.
 
 ---
 
-## Phase 4 — Post-processing in-app
+## Phase 4 — Post-processing in-app — **done**
 
-Replaces the manual image-editor pass that produced the renders in `../imgs/`.
-Those images are, almost exactly, a gradient colormap over density plus bloom —
-so this phase is less "add effects" than "stop doing by hand what the density
-buffer already has the information for".
+Replaces the manual image-editor pass that finished images used to need. That
+pass was, almost exactly, a gradient colormap over density plus bloom — so this
+phase is less "add effects" than "stop doing by hand what the density buffer
+already has the information for".
+
+**The phase is finished on its own terms: finished images now come out of the
+app**, produced entirely in the browser with no editor afterwards. The design
+prediction below held — the
+bloom halo lands lower on the ramp than the core and takes the ramp's middle
+colour by itself, which is what makes a two-tone glow fall out of a single
+gradient rather than needing a second pass.
+
+What landed, with the entries that explain each: the **Look tab** (4.0), the
+**gradient colormap** (T16), **vignette and grain in one RGB pass** (T17),
+**bloom into the density before the tone map** (T18), the **exposure/redraw
+split** so a held image can be graded (T20), the **benchmark** (T22), and the
+**post-pass skips** that made it 19% cheaper (T21). T19 measured the chain and
+T7 was measured, un-parked and parked again — see "The browser is not slow, and
+that is the answer T7 was waiting for" in `docs/decisions.md`.
+
+The original plan follows, for context.
 
 ### 4.0 — A tab of its own — **done**
 
@@ -160,7 +177,7 @@ roadmap said the opposite and was wrong. Bloom is light spilling, so it belongs
 in linear space: blur the density, add it back to the density, then tone-map the
 sum. Blurring the finished 8-bit RGB instead spreads already-clipped, already
 quantised values and comes out flat and grey. The orange haze around the bright
-curves in the reference images is exactly what "blur the density, then send the
+curves is exactly what "blur the density, then send the
 sum through the same log curve and ramp" produces — the halo lands lower on the
 ramp than the core, so it takes the ramp's middle colour on its own.
 
@@ -178,9 +195,9 @@ than reading as grain.
 | **Grain** | RGB, last | **done** — amount, monochrome/colour, static or animated |
 
 **The gradient colormap** replaced the two-colour background→foreground lerp
-with a ramp of several stops, so the black → orange → white grading of the
-reference images is a setting rather than a post-process. See "A colour ramp
-instead of two colours" in `docs/decisions.md`.
+with a ramp of several stops, so a black → orange → white grading is a setting
+rather than a post-process. See "A colour ramp instead of two colours" in
+`docs/decisions.md`.
 
 It was scheduled late here and was **pulled forward to 4.1**: it is the cheapest
 of the four and the highest-impact. `buildTable` already existed and already ran
@@ -211,40 +228,152 @@ depend on how many frames were rendered. Give it its own `Random`, or hash the
 pixel index with the seed.
 
 **This phase makes the render loop heavier, which puts T7 back on the table.**
-The render loop is already the measured bottleneck; a separable Gaussian over
-the density buffer, even at half resolution, is a real addition. T7 (repaint only
-the pixels that changed) was parked as premature — bloom is the thing that would
-un-park it. Alternatively, split live from export: a cheap preview at reduced
-resolution while you tune, full quality only on save.
+*(Written before the phase landed. It did put T7 back on the table, and the
+answer turned out to be no.)* T7 was un-parked by T19's numbers, then parked
+again for a different reason than the one it was originally parked for: **the
+browser is not slow.** Grading a held image redraws with no perceptible lag, and
+T7 cannot help grading anyway — a render-parameter change dirties every pixel by
+definition. Its remaining benefit is to the running exposure, which nobody
+watches. Phase 5 or Phase 6 would revive it; nothing else will.
 
-**Open question.** Keep the post-process on the CPU over the density buffer, or
-move the whole render to a WebGL fragment shader. CPU first: it is simpler, it
-keeps the one-render-path property, and a shader rewrite is a bigger commitment
-than this phase needs. Revisit if bloom alone makes the preview unusable.
+**Resolved: the post-process stays on the CPU.** The open question here was
+whether to move the whole render to a WebGL fragment shader, with "revisit if
+bloom alone makes the preview unusable" as the trigger. It does not, so CPU
+stands and the one-render-path property is kept. Do not reopen this without a
+new measurement and a felt problem.
+
+**Still open, and deliberately not a task yet: splitting live from export** — a
+cheaper preview while tuning, full quality only on save. Bloom leaves a floor
+neither T7 nor T21 removes: ~19 ms a frame at 1080p and ~77 ms at 4K. That does
+not hurt today at 1080p, so the work would be speculative. See the note under
+Phase 5, which is what will trigger it.
 
 ---
 
 ## Phase 5 — Focal-point animation and playback
 
-The furthest out, and the most open-ended.
+The furthest out, and the most open-ended. Rewritten after Phase 4: the earlier
+version was drafted before the exposure and the redraw were separated, and half
+of what it left unresolved is now already built.
 
-Give each focal point a **path** — a straight segment or a Bézier curve — plus a
-duration, and play the whole thing on a timeline. The accumulated image then
-traces the motion, which is where the galaxy-like structures should come from:
-today the shapes are static and only the noise moves.
+### Why it exists
 
-The Playback tab drives it: scrub the timeline, set per-point paths and
-durations, loop or one-shot. Path editing happens on the canvas itself (drag the
-control points), with the panel holding the numbers.
+Today the only way to move a focal point is to drag it with the cursor while the
+exposure runs. That is how the good images get made, and it has one bad
+property: **the gesture is the artwork, and it cannot be edited.** One clumsy
+movement is burned into an exposure that took minutes to build, with no undo and
+no way to try the same motion slightly differently.
 
-**Timelapse export** belongs here too — `MediaRecorder` over a
-`canvas.captureStream()`, since watching the image build up is at least as good
-as the final frame.
+Paths fix that first and reproducibility second. Once a motion is data rather
+than a gesture, it can be nudged, re-timed and re-run — and because everything
+random already comes from a seeded `Random`, a seed plus a set of paths is a
+**fully reproducible film**, which is what makes timelapse export worth having.
 
-**Unresolved.** Whether a "frame" of the animation should accumulate for a fixed
-number of simulation steps (deterministic, slow, exportable) or in real time
-(interactive, non-reproducible). Probably both, with the deterministic mode used
-only for export.
+### What Phase 4 already provides
+
+The old "unresolved" question — whether an animation frame should accumulate a
+fixed number of simulation steps or run in real time — is mostly answered.
+**T20 split stepping from rendering**, so "step the simulation N times, then
+render once" already exists as a separable thing, and rendering is change-driven
+rather than tied to the run state. Phase 5 does not have to decide this; it has
+to use it. What remains is the smaller question of which mode the *timeline*
+runs in: real time while scrubbing, fixed-step while exporting.
+
+### What gets animated
+
+- **Position**, along a path: a straight segment or a Bézier curve, with control
+  points dragged on the canvas and the numbers in the panel.
+- **Weight**, on the same timeline. This is not a lesser feature than position —
+  animating a point's weight changes `d`, so the figure **breathes** in place
+  rather than travelling, which is a different family of images entirely.
+- **Dwell.** A path is segments *and* holds: pause at a control point for a
+  given time so the figure settles and the exposure builds density there. Without
+  dwell, a moving focus draws an even smear; with it, the stops become the bright
+  structure.
+- **Modulation** — a layer *on top of* a path, not an alternative to it. The
+  path gives the trajectory, the modulation gives it character, and they
+  compose. Several kinds, all sharing an **amplitude** control so they can be
+  dialled to nothing:
+
+  | kind | parameters | what it gives |
+  | --- | --- | --- |
+  | sine, perpendicular to the path | amplitude, frequency, phase | a predictable wave along the trajectory — the point weaves instead of sliding |
+  | two sines, on x and y | amplitude, two frequencies, phase | circles and Lissajous figures; a point can orbit while the path carries it |
+  | smooth random walk | amplitude, how fast it wanders | organic drift that never repeats but is not twitchy |
+  | per-frame tremor | amplitude | the actual shake — small, fast, and the least predictable |
+  | weight pulse | amplitude, frequency | the figure breathes on a timer rather than along a path |
+
+  Predictable and random are both wanted, so treat this as a small set of
+  interchangeable modulators rather than one "jitter" slider.
+
+  **Modulation matters most during a dwell.** A point held perfectly still burns
+  a dead spot; a point held still while it trembles or pulses keeps drawing
+  structure in one place, which is where the bright detail should come from.
+
+  **Every random modulator draws from its own `Random`, never the
+  simulation's** — the same rule grain follows. Pulling from the simulation
+  stream would make the particle motion depend on how long the animation ran, and
+  a seed would stop reproducing a film.
+
+Worth considering later, not now: the **step-curve constants** on the timeline.
+Animating `bias` changes how tightly particles hug the curve, so the figure could
+sharpen and dissolve over a run — the strongest remaining knob, and the one most
+likely to break the look if it is animated carelessly. Look parameters
+(exposure, ramp, bloom) should **not** animate for a still image, since grading
+is meant to happen after the exposure; for video they are fair game, because
+each frame is graded independently. Keep the two cases apart.
+
+### Settled: focal points do not appear or disappear
+
+**The set of focal points is fixed for the length of an animation.** Points can
+move and their weights can change, but none is added or removed on the timeline.
+Decided rather than deferred, so a path implementation can assume a stable list.
+
+**The workaround that looks obvious does not work, and this is worth stating
+plainly because it is easy to believe otherwise.** Animating a weight down to 0
+is *not* close to removing the point. `NEllipse.calcDistance` sums **every**
+focal point's distance regardless of its weight; the weight feeds only `d`. So a
+point at weight 0 still pulls at full strength — and worse, it **shrinks the
+figure**, because its distance joins the sum while contributing nothing to the
+target it is compared against. Weight 0 is the opposite of absent: it is a point
+that constrains the curve without paying for any of it.
+
+That is not a defect. Weight 0 is a legitimate and interesting setting — an
+anchor that shapes the figure without enlarging it — and it stays available. It
+simply is not an "off switch", and nothing in Phase 5 should treat it as one.
+
+Real appearance and disappearance would need a per-point factor on the
+**distance** term, not the weight — a change to `calcDistance`, the one piece of
+maths the entire sketch rests on. **Not planned.** If it is ever wanted, it is
+its own decision with its own entry, not a detail of path work.
+
+### The Playback tab
+
+Scrub the timeline, set per-point paths, dwells and durations, loop or one-shot.
+Path editing on the canvas, numbers in the panel, and the same rule the rest of
+the panel follows: every tunable lives in `Params`, and `Panel.sync()` restores
+all of it.
+
+### Timelapse export, and what it will force
+
+`MediaRecorder` over a `canvas.captureStream()`. Watching the image build is at
+least as good as the final frame, and with paths it is repeatable.
+
+**This is what will trigger the live/export split left open in Phase 4.** An
+export renders hundreds of frames back to back, so a frame's cost stops being a
+comfort question and becomes wall-clock time. The cheap thing to get right now,
+while there is still only one consumer of the render path: **make the export
+loop call a render that takes its settings as arguments**, rather than one that
+renders "the current state" from module scope. Splitting live from export
+afterwards is then a matter of passing different settings, instead of untangling
+two callers that both assumed the global one.
+
+The trap that comes with it: **the effects are parameterised in pixels.** Bloom
+radius, grain cell size and the vignette mask are all resolution-dependent, so a
+reduced-resolution preview does not look like the full-resolution export unless
+they scale with it. That is the same class of problem as Phase 6's supersampling
+— pixel-valued parameters that have to move with the canvas — and the two should
+share one rule rather than inventing it twice.
 
 ---
 
