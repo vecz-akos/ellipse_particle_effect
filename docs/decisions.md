@@ -26,6 +26,26 @@ Paragraphs, tables, lists.
 
 ---
 
+# Mnemonic keys, and Colours at the top of the Look tab
+
+Date: 2026-09-09
+
+The mode toggle moves from `c` to `e`. `c` was the old `clearCanvas` flag's
+letter — see "The `record` mode and the tuned constants" — and named nothing
+once that flag became `accumulate`; that entry's mention of "the `c` key" is
+superseded here.
+
+Adding and removing a focal point keep `+` and `-` and gain `a` and `x`: the
+signs are the far side of the keyboard, the letters are under the left hand
+where a repeated shortcut belongs. Both stay bound. Matching is case-sensitive
+as everywhere else in the handler, so Shift-A does not add a point.
+
+The Look tab now opens with Colours; Bloom, Tone map, Vignette and Grain keep
+their order below it. Grading starts at the ramp, so it should not be the third
+section down.
+
+---
+
 # Grain is sparse, coarse and follows the image
 
 Date: 2026-09-08

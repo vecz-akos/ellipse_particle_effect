@@ -478,19 +478,23 @@ window.onload = () => {
             case " ":
                 params.exposing = !params.exposing
                 break
-            case "c":
+            case "e":
                 params.accumulate = !params.accumulate
                 break
             case "s":
                 params.showFocalPoints = !params.showFocalPoints
                 break
+            // The signs and the letters are both bound: the signs read as
+            // add/remove, the letters need no modifier on any layout.
             case "+":
+            case "a":
                 {
                     const point = toCanvas(mf.x, mf.y)
                     addFocalPoint(point.x, point.y)
                 }
                 break
             case "-":
+            case "x":
                 removeFocalPoint()
                 break
             case "f":

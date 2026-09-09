@@ -47,10 +47,10 @@ scaled to fit it whole.
   figure, or a per-point coordinate and weight for each; the step-curve
   constants; and at the very bottom, **Reset parameters** — every field back to
   its startup value with one centred focal point, keeping the seed.
-- **Look** — everything between the density buffer and the pixels, in the order
-  it is applied: bloom, the tone map (exposure, gamma, adaptation), the colour
-  ramp, a vignette and film grain. Bloom, vignette and grain are off until you
-  turn them on, and cost nothing while they are. None of it touches the
+- **Look** — everything between the density buffer and the pixels: the colour
+  ramp first, since that is where grading starts, then bloom, the tone map
+  (exposure, gamma, adaptation), a vignette and film grain. Bloom, vignette and
+  grain are off until you turn them on, and cost nothing while they are. None of it touches the
   simulation, so the usual way to work is to let an image build up first and
   grade it afterwards. Bloom is the expensive one — it re-blurs the whole image
   every frame, so expect the frame rate to drop at 4K.
@@ -85,10 +85,10 @@ Keyboard shortcuts stay the fast path, and the panel follows them.
 | Key | Effect |
 | --- | --- |
 | `space` | pause / resume the exposure |
-| `c` | switch between Live and Exposure |
+| `e` | switch between Live and Exposure |
 | `s` | show / hide a cross at each focal point |
-| `+` | add a focal point at the cursor |
-| `-` | remove the most recently added focal point |
+| `+` or `a` | add a focal point at the cursor |
+| `-` or `x` | remove the most recently added focal point |
 | `f` | make the newest focal point follow the mouse |
 | `r` | roll a new seed and start a new exposure |
 

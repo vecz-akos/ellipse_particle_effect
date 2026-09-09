@@ -317,6 +317,16 @@ export default class Panel {
         const body = this.tabBodies.look,
             params = this.params
 
+        // Colours first: the ramp is the first thing reached for when grading.
+        const ramp = this.section(body, "Colours")
+        this.stopList = el("div", "stop-list")
+        ramp.appendChild(this.stopList)
+        const addStop = el("button", "wide", "Add stop")
+        addStop.addEventListener("click", () => this.addGradientStop())
+        ramp.appendChild(addStop)
+        ramp.appendChild(el("p", "hint", "Position 0 is empty canvas, 1 is the densest pixel."))
+        this.syncGradientStops()
+
         const bloom = this.section(body, "Bloom")
         this.toggle(bloom, "Enabled", {
             read: () => params.bloom.enabled,
@@ -362,15 +372,6 @@ export default class Panel {
             format: fixed(2)
         })
         tone.appendChild(el("p", "hint", "The look is applied to whatever the image already holds — grade it with the exposure paused."))
-
-        const ramp = this.section(body, "Colours")
-        this.stopList = el("div", "stop-list")
-        ramp.appendChild(this.stopList)
-        const addStop = el("button", "wide", "Add stop")
-        addStop.addEventListener("click", () => this.addGradientStop())
-        ramp.appendChild(addStop)
-        ramp.appendChild(el("p", "hint", "Position 0 is empty canvas, 1 is the densest pixel."))
-        this.syncGradientStops()
 
         const vignette = this.section(body, "Vignette")
         this.toggle(vignette, "Enabled", {
@@ -449,7 +450,7 @@ export default class Panel {
             read: () => params.accumulate,
             write: (v) => params.accumulate = v,
             className: "mode",
-            hint: "Live draws each frame afresh; Exposure keeps what has been drawn (c)"
+            hint: "Live draws each frame afresh; Exposure keeps what has been drawn (e)"
         })
         footer.appendChild(run)
 
