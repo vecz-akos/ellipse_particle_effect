@@ -354,6 +354,13 @@ Path editing on the canvas, numbers in the panel, and the same rule the rest of
 the panel follows: every tunable lives in `Params`, and `Panel.sync()` restores
 all of it.
 
+**The transport half is built (T23).** Duration, play/pause, loop or one-shot and
+a scrub are on the tab, and `scripts/Animation.js` holds the clock and one track
+per focal point. The clock counts simulation steps rather than milliseconds, so
+pausing the exposure pauses the timeline — see "The animation clock counts steps"
+in `docs/decisions.md`. What is left on this tab is the per-point half: paths,
+dwells and modulators.
+
 ### Timelapse export, and what it will force
 
 `MediaRecorder` over a `canvas.captureStream()`. Watching the image build is at

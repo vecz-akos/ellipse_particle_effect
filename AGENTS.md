@@ -97,6 +97,17 @@ Rules for all of it:
   not, and `Uint8ClampedArray` clamps for free. Do not "unify" them on the
   Uint32 path — that reintroduces byte-order handling and manual clamping in the
   one place that does not need either.
+- **The animation clock counts simulation steps, not milliseconds.**
+  `Animation.advance` runs once per `step`, so pausing the exposure pauses the
+  timeline — that is deliberate, not a bug to fix. Wall-clock time would make a
+  run depend on the machine and break the reproducibility export needs. See "The
+  animation clock counts steps" in `docs/decisions.md`.
+- **Animation tracks are bound to focal points by index, and
+  `NEllipse.addFocalPoint` unshifts.** A new point takes index 0, so
+  `addFocalPoint` inserts a track at 0 and `removeFocalPoint` removes the one at
+  the same index. Rebuilding the track list from a count instead runs fine and
+  silently hands every track to its neighbour; `syncTracks` is only for the paths
+  that replace the whole figure at once.
 - **`PostProcess.apply`'s two skips are exact, and must stay exact.** A vignette
   mask of exactly 1 and a grain cell with no speck both write back the byte that
   is already there, which is why skipping them is byte-identical. Loosening

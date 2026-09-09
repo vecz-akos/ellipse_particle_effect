@@ -24,6 +24,7 @@ edits everything else live.
 | `scripts/Params.js` | every tunable in one object, and the canvas sizing rule |
 | `scripts/Panel.js` | the control panel on the right |
 | `scripts/Preset.js` | the JSON save format, and the validation on load |
+| `scripts/Animation.js` | the timeline, and one track per focal point |
 | `scripts/main.js` | canvas, animation loop, keyboard controls |
 | `bench/bench.js` | what each render stage costs per frame; tooling, not part of the sketch |
 
@@ -61,7 +62,9 @@ scaled to fit it whole.
 - **Render** — the seed (type one and apply it, or roll a new one), PNG save at
   the current canvas resolution, and presets as JSON. The URL follows the state
   on its own; the preset file is for keeping one on disk.
-- **Playback** — Phase 5, not built yet.
+- **Playback** — the timeline: a duration, play/pause, loop or one-shot, and a
+  scrub. Nothing moves along it yet — focal-point paths and modulators are the
+  next two steps of Phase 5.
 
 Four buttons sit in a strip at the bottom of the panel, outside the tabs, so
 they are visible whichever tab is open: **Pause / Resume** and the
@@ -128,7 +131,9 @@ on. **Load…** reads one back: the canvas is resized to the preset's aspect and
 resolution, the figure is scaled into it, and the run restarts from the saved
 seed. Whether the simulation is running, whether a point follows the mouse and
 whether the focal-point crosses are shown are not saved; everything that shapes
-the image is.
+the image is. That includes the timeline's duration, loop mode and whether it is
+playing — an animation is part of the image, not part of your session — but not
+where the playhead happens to be sitting.
 
 The file keeps every field, while the link carries only what differs from the
 defaults — a link is shared and ephemeral, a saved file is what you come back to

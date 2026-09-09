@@ -36,6 +36,13 @@ export default class Params {
         this.vignette = { enabled: false, amount: .5, radius: .6, softness: .5 }
         this.grain = { enabled: false, amount: .15, size: 1, coverage: .4, mono: true }
 
+        // playback. duration is in simulation steps, not seconds: the timeline's
+        // clock is the step counter, so the same transport input always gives
+        // the same animation. The current time is runtime state and lives on the
+        // Animation instance, not here. See "The animation clock counts steps"
+        // in docs/decisions.md.
+        this.animation = { duration: 600, loop: true, playing: false }
+
         // exposing: the image is being fed — particles step and their hits are
         // counted. Stopping it freezes the picture, not the app; the look can
         // still be graded. accumulate: the exposure builds up instead of being

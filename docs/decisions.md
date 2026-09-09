@@ -26,6 +26,68 @@ Paragraphs, tables, lists.
 
 ---
 
+# The animation clock counts steps
+
+Date: 2026-09-09
+
+T23, Phase 5.1. The timeline exists and nothing moves along it yet, which is the
+intended outcome: this task fixes the clock and the shape of the data, and the
+two tasks after it inherit both.
+
+**Time is counted in simulation steps, never in milliseconds.** One step, one
+unit. `Animation.advance` is called at the end of `step` in `main.js`, so after
+N steps the clock reads N. Wall-clock time would make a run depend on how fast
+the machine happened to be, which throws away exactly the reproducibility the
+seeded `Random` exists for and which timelapse export will need — a film has to
+come out the same twice.
+
+**The consequence is visible, and it will look like a bug: pausing the exposure
+pauses the animation.** Stepping is what drives the clock, and `space` stops
+stepping. That is correct rather than incidental — while the exposure is held
+nothing is being drawn, so an animation that kept running would advance past
+frames that never reached the image. Say so in the UI rather than fixing it; the
+Play button's tooltip does.
+
+**Where the state lives.** `Params.animation` holds `duration` (in steps), `loop`
+and `playing` — the tunables, edited through the panel's usual `read`/`write`
+closures and restored by `Panel.sync()`. The current time is runtime state on the
+`Animation` instance and is deliberately *not* in `Params`: it is not something a
+user sets, and a preset that restored a half-played position would be restoring a
+moment rather than an animation.
+
+**`playing` is saved in a preset, unlike `exposing`.** The SKIP list exists so a
+shared preset does not start burning an image or hand a point to the mouse.
+Whether the timeline is running is a different kind of thing — it is part of the
+animation someone authored, not of their session — so it travels. Worth a second
+look if it turns out that opening a preset and having it immediately play is
+unwelcome; the change would be one entry in `Preset`'s `SKIP`.
+
+**Tracks are bound to focal points by position, and that is a trap.**
+`NEllipse.addFocalPoint` **unshifts** — a new point takes index 0 and pushes
+every existing one down. So the animation cannot rebuild its tracks from a count;
+`addFocalPoint` inserts a track at 0 and `removeFocalPoint` removes the one at
+the same index. Rebuilding by count alone compiles, runs, and silently hands
+every track to its neighbour. Only the paths that replace the whole figure at
+once — a preset, a reset — call `syncTracks`, where there is no order to
+preserve.
+
+A track holds an identity and nothing else. T24 adds a path and a weight, T25 a
+stack of modulators; the identity is there because a modulator has to seed its
+own `Random` from something stable, or two tracks tremble in lockstep. Ids are
+handed out once and never reused.
+
+**Verified**, since none of this is visible on screen: the model against 25
+checks — the clock, looping, one-shot end, seek clamping, track insertion and
+removal, identity uniqueness, and the preset round-trip including hostile input
+— and the real `Panel` built against a hand-rolled DOM and driven through 24
+more: play, pause, loop, scrub, duration, the readout's text, a finished
+one-shot releasing its button, and `sync()` restoring all of it. And the claim
+that nothing moves yet is a measurement rather than an assertion: 500 steps with
+the timeline running produce a density buffer identical to 500 steps with it
+stopped, while the clock reads 500 against 0.
+
+---
+
 # T21's negative results, re-measured — two of them were wrong
 
 Date: 2026-09-09

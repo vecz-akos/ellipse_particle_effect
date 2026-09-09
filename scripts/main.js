@@ -10,6 +10,7 @@ import Preset from "./Preset.js"
 import Gradient from "./Gradient.js"
 import PostProcess from "./PostProcess.js"
 import Bloom from "./Bloom.js"
+import Animation from "./Animation.js"
 
 const canvas = document.querySelector('canvas'),
     stage = document.querySelector('.stage'),
@@ -20,6 +21,7 @@ const density = new DensityBuffer(1, 1)
 const nEllipse = new NEllipse(0)
 const post = new PostProcess()
 const bloom = new Bloom()
+const animation = new Animation()
 const mf = new MouseFollower()
 
 // The URL hash carries the whole state, so a run can be linked and replayed.
@@ -159,15 +161,21 @@ const writeHash = () => {
 
 // weight null means "whatever the panel says": the shared weight while that is
 // in charge, so a new point matches the others, or unit_d in manual mode.
+// The animation keeps one track per focal point, bound by position, and
+// NEllipse.addFocalPoint unshifts — so a new point takes index 0 and every
+// existing track shifts with it.
 const addFocalPoint = (x, y, weight=null) => {
     if (weight === null && !params.manualWeight) weight = params.sharedWeight
     nEllipse.addFocalPoint(new FocalPoint(x, y), weight)
+    animation.insertTrack(0)
     markStateChanged()
     if (panel) panel.syncFocalPoints()
 }
 
 const removeFocalPoint = (index=0) => {
+    const removed = index >= 0 && index < nEllipse.numberOfFocalPoints
     nEllipse.removeFocalPoint(index)
+    if (removed) animation.removeTrack(index)
     markStateChanged()
     if (panel) panel.syncFocalPoints()
 }
@@ -191,6 +199,11 @@ const update = () => {
     }
     if (needsRender) render()
 
+    // Guarded inside, like every other per-frame DOM write. It runs while the
+    // transport is on and for one frame after it stops, so the button that a
+    // finished one-shot just released still flips back.
+    if (params.animation.playing || panel.shownPlaying) panel.refreshTransport()
+
     if (hashDueAt && performance.now() >= hashDueAt) writeHash()
     window.requestAnimationFrame(update)
 }
@@ -207,6 +220,16 @@ const step = () => {
     if (!params.accumulate) density.clear()
     for (let p of particles) {
         density.add(p.x, p.y)
+    }
+
+    // The animation's clock, at the end of the step so that after N steps it
+    // reads N. It runs only from here, so it advances exactly when the image is
+    // being fed and never in wall-clock time — see "The animation clock counts
+    // steps" in docs/decisions.md.
+    if (params.animation.playing) {
+        if (animation.advance(params.animation.duration, params.animation.loop)) {
+            params.animation.playing = false
+        }
     }
 }
 
@@ -333,6 +356,10 @@ const applyPreset = (data) => {
     resizeCanvas()
     if (preset.width && preset.height) rescaleFocalPoints(preset.width, preset.height)
     applyDefaultWeight()
+    // The point list was replaced wholesale, so there is no track order to
+    // preserve; the timeline starts at the beginning of the restored animation.
+    animation.syncTracks(nEllipse.numberOfFocalPoints)
+    animation.seek(0, params.animation.duration)
     panel.syncFocalPoints()
     panel.sync()
     applySeed(preset.seed || random.seed)
@@ -346,6 +373,8 @@ const resetParams = () => {
 
     resizeCanvas()
     nEllipse.focalPoints = []
+    animation.syncTracks(0)
+    animation.seek(0, params.animation.duration)
     applyDefaultWeight()
     addFocalPoint(Math.round(width/2), Math.round(height/2))
     panel.sync()
@@ -384,7 +413,7 @@ window.onload = () => {
     resizeCanvas()
     applyDefaultWeight()
 
-    panel = new Panel(params, nEllipse, {
+    panel = new Panel(params, nEllipse, animation, {
         // A new pixel size is a new image: the density is resolution-specific,
         // so it is dropped here. A window resize keeps it — see AGENTS.md.
         canvasChanged: () => {

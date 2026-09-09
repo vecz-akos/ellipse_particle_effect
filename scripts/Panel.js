@@ -35,9 +35,10 @@ const TABS = [
 // The control panel. Owns no state of its own: every control reads and writes
 // the Params instance, and hands the app a hint about what has to be rebuilt.
 export default class Panel {
-    constructor(params, nEllipse, handlers={}) {
+    constructor(params, nEllipse, animation, handlers={}) {
         this.params = params
         this.nEllipse = nEllipse
+        this.animation = animation
         this.handlers = handlers
         this.controls = []
         this.focalRows = []
@@ -129,6 +130,9 @@ export default class Panel {
         if (change && commit) input.addEventListener("change", () => change())
 
         this.row(parent, label, input, value)
+        // For the one caller that repaints itself every frame and cannot afford
+        // a DOM query to find its own readout.
+        input.valueNode = value
         this.controls.push(sync)
         sync()
         return input
@@ -535,9 +539,84 @@ export default class Panel {
     }
 
     buildPlayback() {
-        const body = this.tabBodies.playback
-        const section = this.section(body, "Playback")
-        section.appendChild(el("p", "hint", "Focal-point paths and timelapse export are Phase 5 — see docs/roadmap.md."))
+        const body = this.tabBodies.playback,
+            params = this.params,
+            animation = this.animation
+
+        const timeline = this.section(body, "Timeline")
+
+        const transport = el("div", "modes")
+        this.playButton = this.toggleButton(transport, (on) => on ? "Pause" : "Play", {
+            read: () => params.animation.playing,
+            write: (on) => {
+                // Pressing play on a finished one-shot starts it again rather
+                // than leaving it sitting on its last step.
+                if (on && animation.finished(params.animation.duration, params.animation.loop)) {
+                    animation.seek(0, params.animation.duration)
+                }
+                params.animation.playing = on
+            },
+            hint: "The timeline advances one step per simulation step, so it only runs while the exposure does (space)"
+        })
+        this.toggleButton(transport, (on) => on ? "Loop" : "One-shot", {
+            read: () => params.animation.loop,
+            write: (on) => params.animation.loop = on,
+            hint: "One-shot stops at the end; loop wraps back to the start"
+        })
+        timeline.appendChild(transport)
+
+        this.slider(timeline, "Duration", {
+            read: () => params.animation.duration,
+            write: (value) => params.animation.duration = value,
+            min: 60, max: 6000, step: 10,
+            format: (value) => `${value} steps`,
+            change: () => this.syncTransport()
+        })
+
+        this.scrubInput = this.slider(timeline, "Time", {
+            read: () => animation.time,
+            write: (value) => animation.seek(value, params.animation.duration),
+            min: 0, max: Math.max(1, Math.round(params.animation.duration)), step: 1,
+            format: (value) => String(Math.round(value)),
+            // The readout only repaints itself while the transport runs, so a
+            // scrub on a stopped timeline has to ask for it.
+            change: () => this.refreshTransport()
+        })
+
+        this.timeReadout = el("p", "readout", "")
+        timeline.appendChild(this.timeReadout)
+        timeline.appendChild(el("p", "hint", "Duration is counted in simulation steps rather than seconds, so a run reproduces exactly. At 60 fps a step is about 17 ms."))
+        timeline.appendChild(el("p", "hint", "Nothing moves yet: paths, dwells and modulators come next — see Phase 5 in docs/roadmap.md."))
+
+        this.syncTransport()
+    }
+
+    // Not on a per-frame path: the scrub's range follows the duration, and a
+    // duration written from outside can leave the current time past the end.
+    syncTransport() {
+        const duration = Math.max(1, Math.round(this.params.animation.duration))
+        this.scrubInput.max = duration
+        if (this.animation.time > duration) this.animation.seek(duration, duration)
+        this.refreshTransport()
+    }
+
+    // Runs every frame while the timeline plays, so every write is guarded —
+    // see the per-frame DOM rule in AGENTS.md.
+    refreshTransport() {
+        const { duration, playing } = this.params.animation
+        const time = this.animation.time,
+            span = Math.max(1, Math.round(duration))
+
+        setNumber(this.scrubInput, time)
+        setText(this.scrubInput.valueNode, String(Math.round(time)))
+        setText(this.timeReadout,
+            `Step ${Math.round(time)} of ${span} — ${Math.round(time/span*100)}%, ${(span/60).toFixed(1)} s at 60 fps`)
+
+        if (this.shownPlaying !== playing) {
+            this.shownPlaying = playing
+            setText(this.playButton, playing ? "Pause" : "Play")
+            this.playButton.classList.toggle("active", playing)
+        }
     }
 
     // Rebuilds the focal-point rows. Called when a point is added or removed;
@@ -722,5 +801,8 @@ export default class Panel {
         // Not one of the registered controls: the stop list is a variable number
         // of rows, so a preset or a reset has to rebuild it.
         this.syncGradientStops()
+        // Nor is the scrub's range, which follows the duration that has just
+        // been restored.
+        this.syncTransport()
     }
 }

@@ -1087,3 +1087,68 @@ matters, the `docs/decisions.md` entry says so.
 - Output is byte-identical to the current implementation at the same seed and
   parameters.
 - Every change that did **not** help is named in the entry, so it is not retried.
+
+---
+
+## T23 — The timeline, and the shape animation data takes
+
+- **Kind:** feature
+- **Roadmap:** Phase 5.1
+- **Touches:** `scripts/Animation.js` (new), `scripts/Params.js`, `scripts/Panel.js`, `scripts/main.js`, `scripts/Preset.js`
+- **Status:** done
+
+**Prompt**
+
+> Phase 5 gives focal points motion that is **data rather than a gesture**, so a
+> good movement can be edited and re-run instead of being burned into an exposure
+> by one pass of the cursor. This first task builds none of the motion. It builds
+> the clock everything else reads and the data shape everything else writes — get
+> those wrong and the two tasks after it inherit the mistake.
+>
+> **The timeline.** One animation: a duration, a current time, and a transport —
+> play, pause, loop or one-shot, and a scrub. It lives on the Playback tab, which
+> is a placeholder today.
+>
+> **Two clocks, and this is the part to get right.** The animation's time is
+> advanced by **simulation steps**, not by wall-clock milliseconds — a fixed
+> number of steps per animation frame. Wall-clock time makes the result depend on
+> how fast the machine ran, which throws away the reproducibility the seeded
+> `Random` exists for and which a later export task depends on. A real-time scrub
+> for interaction is fine, but the authoritative advance is counted in steps. T20
+> already separated stepping from rendering, so this is a counter in the step
+> path, not a new loop.
+>
+> **The data.** A new `scripts/Animation.js`, default-exported like every other
+> class here. It owns the duration, the transport state, and a per-focal-point
+> track; a track holds nothing yet beyond an identity. Two constraints the shape
+> has to respect from the start:
+>
+> - **The focal-point set is fixed for the length of an animation.** Points are
+>   never added or removed on the timeline, so a track can assume a stable list.
+>   Do not build an appear/disappear mechanism, and **do not treat weight 0 as
+>   one** — see "Settled: focal points do not appear or disappear" in
+>   `docs/roadmap.md` for why weight 0 is the opposite of absent.
+> - **Tracks will later carry position, weight and a stack of modulators.**
+>   Adding those should be an extension rather than a rewrite — but do not build
+>   them here.
+>
+> **Where the state lives.** Every tunable belongs in `Params`, reached through
+> the panel's existing `read`/`write` closures, and `Panel.sync()` must restore
+> the transport like anything else. Non-tunable runtime state — the current time
+> while playing — stays in `main.js` or the `Animation` instance. `AGENTS.md` has
+> the rule.
+>
+> **Presets.** The animation shapes the image, so it is saved. Follow what
+> `Preset.js` already does: validate on load, ignore what does not match. Old
+> files and links do not have to keep working — see the project state above.
+>
+> **Not in this task:** paths, dwells, modulators, export. A timeline that plays
+> and scrubs while nothing moves is the correct outcome here.
+
+**Done when**
+
+- The Playback tab plays, pauses, loops, scrubs and reports a time.
+- The animation advances in simulation steps, and the same seed with the same
+  transport input produces the same step count.
+- `Panel.sync()` restores the transport, and a saved preset round-trips it.
+- Nothing moves yet, and no focal point is added or removed by the animation.

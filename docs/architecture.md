@@ -148,6 +148,18 @@ behind a `p1.` marker, with `strip` removing everything the defaults already say
 — one schema for the file and the link, two serialisations of it. It touches no DOM
 and reads no globals.
 
+### `scripts/Animation.js`
+
+The timeline. Owns the current time and one track per focal point; the settings
+it runs on — duration, loop, playing — live in `Params` and are passed to
+`advance` and `seek`, the way `Bloom` and `PostProcess` take theirs. **Time is
+counted in simulation steps**, one unit per `step`, so a run reproduces exactly
+and a paused exposure holds the timeline with it. Tracks are bound to focal
+points by index and carry only an identity so far: `insertTrack` and
+`removeTrack` follow single edits to the figure, `syncTracks` the paths that
+replace it whole. Paths, dwells and modulators hang off a track later. It touches
+no DOM.
+
 ### `scripts/main.js`
 
 The application. Owns the canvas and its 2D context, the density buffer and its
@@ -176,7 +188,8 @@ requestAnimationFrame
        │    │     particle steps by f(error) in a seeded random direction ← Particle, Random
        │    │     particleCorrection(particle)              ← recycle if far off-screen
        │    ├─ accumulate ? keep the buffer : density.clear()
-       │    └─ density.add(x, y) for each particle          ← DensityBuffer
+       │    ├─ density.add(x, y) for each particle          ← DensityBuffer
+       │    └─ animation.playing ? animation.advance()      ← Animation, one unit per step
        ├─ needsRender ? render()
        │    ├─ bloom ? density + blurred density      ← Bloom, in linear space
        │    ├─ density.render(imageData)              ← DensityBuffer + Gradient
