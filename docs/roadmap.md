@@ -499,21 +499,31 @@ Four consequences the implementation has to get right:
 Everything else follows the rule the rest of the panel follows: every tunable
 lives in `Params`, and `Panel.sync()` restores all of it.
 
-### Timelapse export, and what it will force
+### Timelapse export, and what it will force — **done**
 
-`MediaRecorder` over a `canvas.captureStream()`. Watching the image build is at
-least as good as the final frame, and with paths it is repeatable.
+Landed as T27; see "Timelapse export is a special play, not a mode" in
+`docs/decisions.md`. `MediaRecorder` over a hidden canvas's `captureStream(0)`,
+one frame per `stepsPerFrame` steps. What follows is the plan as it stood.
 
-**This is what will trigger the live/export split left open in Phase 4.** An
-export renders hundreds of frames back to back, so a frame's cost stops being a
-comfort question and becomes wall-clock time. The cheap thing to get right now,
-while there is still only one consumer of the render path: **make the export
-loop call a render that takes its settings as arguments**, rather than one that
-renders "the current state" from module scope. Splitting live from export
-afterwards is then a matter of passing different settings, instead of untangling
-two callers that both assumed the global one.
+**It is one button and a special play, not a mode** (T27): start a fresh
+exposure, play the timeline from the start at a fixed number of steps per
+frame, record each frame from a hidden canvas so no overlay gets in, stop at the
+end, and leave the finished image on the canvas. The recorder observes the run
+and must not change it — the density after an export is the same as after
+playing without one.
 
-The trap that comes with it: **the effects are parameterised in pixels.** Bloom
+**It does not force the live/export split after all.** This section used to say
+it would, on the reasoning that an export renders hundreds of frames back to
+back. It does — but at the canvas resolution with the current look, which is
+exactly what the live render already produces, so there are no different
+settings to pass and no reason to turn `render` into a function of arguments
+yet. The split stays open, with a narrower trigger: a *preview-quality* export,
+if one is ever wanted. What the export does cost is wall-clock time, and
+`MediaRecorder` timestamps by wall clock, so a slow 4K frame makes a slow film
+rather than a dropped frame. Per-frame timestamps would need WebCodecs and a
+muxer — a dependency, and not one this project takes lightly.
+
+The trap that would come with a split: **the effects are parameterised in pixels.** Bloom
 radius, grain cell size and the vignette mask are all resolution-dependent, so a
 reduced-resolution preview does not look like the full-resolution export unless
 they scale with it. That is the same class of problem as Phase 6's supersampling

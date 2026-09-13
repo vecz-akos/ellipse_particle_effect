@@ -44,8 +44,9 @@ export default class Params {
         // Settings only. Whether the timeline is running and where the playhead
         // sits are runtime state on the Animation instance — keeping them out of
         // here is what stops a preset from carrying them. See "Run state stays
-        // off Params" in docs/decisions.md.
-        this.animation = { duration: 600, loop: true }
+        // off Params" in docs/decisions.md. stepsPerFrame is the timelapse
+        // export's pace: how many simulation steps one video frame gets.
+        this.animation = { duration: 600, loop: true, stepsPerFrame: 2 }
 
         // exposing: the image is being fed — particles step and their hits are
         // counted. Stopping it freezes the picture, not the app; the look can

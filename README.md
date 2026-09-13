@@ -49,7 +49,8 @@ scaled to fit it whole.
   and, below it, the open point's **track**: an ordered list of **stations**.
   Each station is a position and a weight at one step of the timeline, held for
   a **dwell**, with a straight or curved **leg** to the next one. Most points
-  never get a track and simply stand where you put them.
+  never get a track and simply stand where you put them. At the bottom,
+  **Export timelapse** records the image building up as a `.webm`.
 
 Four buttons sit in a strip at the bottom of the panel, outside the tabs, so
 they are visible whichever tab is open: **Pause / Resume** and the
@@ -140,6 +141,22 @@ pixels; **waves** is how many full cycles fit in the hold or the leg, so a whole
 number brings the point back onto the plan exactly as the phase ends, however
 long it is. Every wobble is computed from the step and the seed, so the same
 link gives the same film however you scrub to a step.
+
+## Recording a timelapse
+
+**Export timelapse**, at the bottom of the Playback tab, starts a fresh exposure,
+plays the timeline from the start and records every frame — without the
+overlay — into a `.webm` named like the PNG. It stops at the end (loop or not),
+downloads the file, and leaves the finished image on the canvas, paused, ready
+to grade or save. **Steps per frame** sets the pace: how many simulation steps
+each video frame gets; the tab shows the resulting frame count. Press the button
+again to cancel — nothing is written and the image you had comes back. While it
+records, the Parameters tab is locked; the Look tab is not, so the ramp or the
+bloom can be changed mid-film and the change is in the film.
+
+Frames are stamped as they arrive, so a canvas that takes long to render (4K
+with bloom) makes a film that plays slower than the frame count suggests, never
+one with frames missing.
 
 ## Seeds
 

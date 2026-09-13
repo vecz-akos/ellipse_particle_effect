@@ -200,7 +200,11 @@ const update = () => {
         panel.refreshFocalValues()
     }
 
-    if (params.exposing) {
+    if (exportRun) {
+        // A special play: the export drives the one stepping loop with a count
+        // and captures once per frame. See exportFrame.
+        exportFrame()
+    } else if (params.exposing) {
         step()
         // Directly, never through markStateChanged: that one is debounced, and
         // pushing its deadline forward every frame would stop the URL hash from
@@ -437,6 +441,172 @@ const savePng = () => {
     target.toBlob((blob) => download(blob, `n-ellipse-${random.seed}-${width}x${height}.png`))
 }
 
+// ---- timelapse export -------------------------------------------------
+//
+// One button and a special play, not a mode: a fresh exposure, the timeline
+// played from the start at a fixed number of steps per frame, every frame
+// recorded from a hidden canvas so no overlay gets in, and a stop at the end
+// with the finished image left on the canvas. The recorder observes the run
+// and never changes it — the density after an export is what playing the same
+// timeline without one leaves. See "Timelapse export" in docs/decisions.md.
+//
+// Session state, never in Params: an export is not something a link restores.
+let exportRun = null
+
+// The codecs worth asking for, best first. MediaRecorder's default bitrate
+// smears a film of fine traces, so it is set high and explicitly.
+const EXPORT_TYPES = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"]
+const EXPORT_BITRATE = 40_000_000
+
+const exportFrames = () => {
+    const span = Animation.span(params.animation.duration)
+    const perFrame = Math.max(1, Math.round(params.animation.stepsPerFrame))
+    // Plus the empty first frame, captured before any step.
+    return Math.ceil(span/perFrame) + 1
+}
+
+const exportTimelapse = () => {
+    if (exportRun) {
+        cancelExport()
+        return
+    }
+    if (typeof MediaRecorder === "undefined" || typeof canvas.captureStream !== "function") {
+        panel.setPlaybackStatus("This browser cannot record a canvas.", true)
+        return
+    }
+
+    const target = document.createElement("canvas")
+    target.width = width
+    target.height = height
+    // Zero frame rate: a frame goes to the recorder only on requestFrame, so
+    // it gets exactly one per export frame and nothing in between.
+    const stream = target.captureStream(0)
+    const mimeType = EXPORT_TYPES.find(type => MediaRecorder.isTypeSupported(type)) || ""
+    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: EXPORT_BITRATE })
+    const chunks = []
+    recorder.addEventListener("dataavailable", (event) => {
+        if (event.data.size > 0) chunks.push(event.data)
+    })
+    recorder.addEventListener("stop", () => {
+        if (!run.finished) return
+        const blob = new Blob(chunks, { type: recorder.mimeType || "video/webm" })
+        download(blob, `n-ellipse-${random.seed}-${width}x${height}.webm`)
+        panel.setPlaybackStatus(`Exported ${run.frame} frames as n-ellipse-${random.seed}-${width}x${height}.webm.`)
+    })
+
+    const run = {
+        recorder,
+        stream,
+        target: target.getContext("2d"),
+        perFrame: Math.max(1, Math.round(params.animation.stepsPerFrame)),
+        total: exportFrames(),
+        frame: 0,
+        finished: false,
+        // What a cancel puts back: the settings the export overrides, the clock,
+        // and the image that was on the canvas.
+        restore: {
+            exposing: params.exposing,
+            accumulate: params.accumulate,
+            loop: params.animation.loop,
+            followFocalPoint: params.followFocalPoint,
+            time: animation.time,
+            density: density.data.slice(),
+            whitePoint: density.whitePoint,
+            max: density.max
+        }
+    }
+
+    // A fresh exposure, the way a new one starts: exposure mode, an empty
+    // buffer, the seeded stream from its start, and the clock at 0. The hand
+    // is taken off the figure, and loop is off — a film has an end.
+    params.accumulate = true
+    params.exposing = true
+    params.followFocalPoint = false
+    params.animation.loop = false
+    density.clear()
+    animation.seek(0, params.animation.duration, false)
+    animation.playing = true
+    spawnParticles()
+    applyTracks()
+    panel.sync()
+
+    exportRun = run
+    panel.setExporting(true)
+    recorder.start()
+    // The first frame is the empty canvas, before any step.
+    captureExportFrame()
+}
+
+// One video frame: the steps it gets, one render, one capture. The stepping is
+// the ordinary step(), driven with a count — not a second loop.
+const exportFrame = () => {
+    const run = exportRun
+    for (let i = 0; i < run.perFrame && animation.playing; i++) step()
+    captureExportFrame()
+    if (!animation.playing) finishExport()
+}
+
+const captureExportFrame = () => {
+    const run = exportRun
+    render()
+    // The hidden canvas gets the post-processed pixels and nothing drawn on
+    // top of them — the same copy savePng makes.
+    run.target.putImageData(imageData, 0, 0)
+    const [track] = run.stream.getVideoTracks()
+    if (track && typeof track.requestFrame === "function") track.requestFrame()
+    else if (typeof run.stream.requestFrame === "function") run.stream.requestFrame()
+    run.frame++
+    panel.setPlaybackStatus(`Exporting — frame ${run.frame} of ${run.total}.`)
+}
+
+// The film is done: the exposure is held with the finished picture in it,
+// gradeable and saveable like any other, and the settings the export overrode
+// go back — except that it is paused, which is the point.
+const finishExport = () => {
+    const run = exportRun
+    exportRun = null
+    run.finished = true
+    params.exposing = false
+    params.followFocalPoint = run.restore.followFocalPoint
+    params.animation.loop = run.restore.loop
+    animation.playing = false
+    panel.setExporting(false)
+    panel.sync()
+    needsRender = true
+    // A frame requested from a captureStream(0) reaches the recorder
+    // asynchronously; stopping in the same tick as the last requestFrame could
+    // leave the finished image out of the file. One animation frame later is
+    // enough for it to land. See T27b in docs/decisions.md.
+    requestAnimationFrame(() => run.recorder.stop())
+}
+
+// A second press: the recorder is stopped without a file, and everything the
+// export changed is put back — including the image that was on the canvas.
+const cancelExport = () => {
+    const run = exportRun
+    exportRun = null
+    run.recorder.stop()
+    params.exposing = run.restore.exposing
+    params.accumulate = run.restore.accumulate
+    params.followFocalPoint = run.restore.followFocalPoint
+    params.animation.loop = run.restore.loop
+    // The canvas could have been resized mid-export from the Parameters tab;
+    // the old image only fits the canvas it was drawn on.
+    if (run.restore.density.length === density.data.length) {
+        density.data.set(run.restore.density)
+        density.whitePoint = run.restore.whitePoint
+        density.max = run.restore.max
+    }
+    animation.playing = false
+    animation.seek(run.restore.time, params.animation.duration, params.animation.loop)
+    spawnParticles()
+    applyTracks()
+    panel.setExporting(false)
+    panel.sync()
+    panel.setPlaybackStatus("Export cancelled — no file was written.")
+    needsRender = true
+}
+
 const download = (blob, name) => {
     const link = document.createElement("a")
     link.href = URL.createObjectURL(blob)
@@ -582,6 +752,8 @@ window.onload = () => {
         savePreset,
         loadPreset,
         resetParams,
+        exportTimelapse,
+        exportFrames,
         changed: markStateChanged,
         // Only the commented-out New exposure button calls this today; switching
         // to Live and back does the same thing in two clicks. Kept because the
@@ -624,6 +796,11 @@ window.onload = () => {
     // track and a point under the hand would otherwise both write its position
     // and the last one in the frame would win silently.
     canvas.addEventListener("mousedown", (event) => {
+        // A hand on the figure would steer the film.
+        if (exportRun) {
+            panel.setPlaybackStatus("Exporting — cancel it before moving anything.", true)
+            return
+        }
         const point = toCanvas(event.clientX, event.clientY)
 
         draggingHandle = pickHandle(point.x, point.y)
@@ -689,6 +866,13 @@ window.onload = () => {
     document.body.addEventListener("keydown", (event) => {
         // The panel's own inputs keep their keys.
         if (event.target.closest(".panel")) return
+
+        // Every key but the overlay toggle would start a new exposure or move
+        // the figure, which is the film being wrecked rather than steered.
+        if (exportRun && event.key !== "s") {
+            panel.setPlaybackStatus("Exporting — cancel it first.", true)
+            return
+        }
 
         switch (event.key) {
             case " ":

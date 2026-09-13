@@ -26,6 +26,101 @@ Paragraphs, tables, lists.
 
 ---
 
+# Timelapse export is a special play, not a mode
+
+Date: 2026-09-13
+
+T27. One button on the Playback tab records the image building up while the
+timeline plays, as a `.webm`. Watching a figure form is at least as good as the
+still it ends in, and with tracks it is repeatable: the same link gives the same
+film.
+
+**It is a special play.** Pressing **Export timelapse** switches to Exposure,
+clears the density, seeks the clock to 0, restarts the seeded stream
+(`spawnParticles`, as a new exposure does), turns loop off — a film has an end —
+and plays from the start, recording. When the one-shot reaches its end the
+exposure is paused with the finished image on the canvas, gradeable and saveable
+like any other, the file downloads, and the settings the export overrode (loop,
+follow) go back. There is no export *mode* anywhere in `Params`: `exportRun` in
+`main.js` is session state, an export is not something a link restores, and the
+only trace it leaves is a finished picture.
+
+**Steps per frame, not frames per second.** The clock counts steps, so the pace
+is `params.animation.stepsPerFrame` (default 2): each export frame runs that
+many `step()`s, renders once, and captures once. This is the fixed-step mode
+T20's split was made for, and there is no second stepping loop — `update()`
+calls `exportFrame()` instead of `step()` while an export runs, and
+`exportFrame` drives the one existing `step()` with a count. The harness checks
+what that has to mean: stepping in groups of 1, 2 or 7 with a render between
+groups leaves the density **byte-identical** to stepping singly with a render
+each time — the recorder observes the run, it does not change it. The empty
+canvas is captured as the first frame before any step, so the film has
+`ceil(span / stepsPerFrame) + 1` frames, which the tab shows with the seconds
+that makes at 60 fps — the best case, see below.
+
+**A hidden canvas is recorded, not the visible one.** The visible canvas has the
+track, the station markers and the crosses drawn after the blit, and a film of
+the image must not have them. The export owns an offscreen canvas that receives
+`putImageData(imageData)` per frame — the same copy `savePng` makes — recorded
+through `captureStream(0)` and a `MediaRecorder`. Zero frame rate means a frame
+reaches the recorder only on `requestFrame()`, so it gets exactly one per export
+frame and nothing in between.
+
+**Two `MediaRecorder` traps, both accepted.** It timestamps frames by wall
+clock: a 4K frame with bloom that takes 250 ms to step and render makes a film
+that plays slower than the steps-per-frame arithmetic says, because that is how
+long the frames really took. The content is complete and in order — nothing is
+dropped. Per-frame timestamps would need WebCodecs plus a muxer, a dependency;
+the tab's hint says so in one sentence. And its default bitrate smears a film of
+fine traces, so `videoBitsPerSecond` is 40 Mbit/s and VP9 is asked for first,
+VP8 then plain `video/webm` as fallbacks.
+
+**One difference from a live run, on purpose.** `whitePoint` eases towards the
+peak once per *render*, and an export renders once per frame rather than once
+per step, so the tone map's white point lags differently during a film than
+during a live run. The density is identical; only the intermediate frames'
+normalisation differs slightly. When the export finishes the exposure is held,
+`adaptation` snaps to 1 on the next render, and the picture on the canvas is
+the one a live run would have left.
+
+**Locked while it runs, cancellable with a second press.** The transport, the
+duration, the scrub, the pace, the footer's Pause and Exposure buttons, the
+seed, Load and Reset are disabled through one `exportLocked` list in `Panel`;
+the keyboard refuses everything but the overlay toggle, and the canvas refuses
+a hand on the figure. A second press stops the recorder without a file and puts
+everything back — including the image that was on the canvas, from a copy of
+the density taken at the start. The Playback status line shows `frame N of M`.
+
+**The whole Parameters tab is locked, not a list of its controls** (T27b).
+The first version enumerated — Aspect, Resolution, Particles, Reset — and left
+Add focal point, the per-point fields, the shared Weight, Manual, tolerance and
+the step-curve constants live, every one of which changes the simulation the
+recorder is observing; adding a point even runs `insertTrack(0)` under the
+running export. So `setExporting` walks the tab body's inputs, selects and
+buttons, disables them all, and restores each to the state it had — the
+per-point `w` fields are disabled in shared mode and come back that way, not
+enabled. The snapshot is taken before the listed locks touch anything, since
+some of those sit on this tab and a snapshot taken after would restore them
+locked. **The Look tab stays live on purpose**: a film is graded per frame, and
+changing the ramp or the bloom while it records is a legitimate thing to do —
+watching the colour shift through the film turned out to be a feature. Do not
+lock it later out of symmetry.
+
+**The last frame, and a one-frame delay before `stop()`.** A frame requested
+from a `captureStream(0)` reaches the recorder asynchronously, so stopping in
+the same tick as the final `requestFrame()` could leave the finished image out
+of the file. Checked in the browser by scrubbing an export to its end against
+the canvas: the two looked "very similar", which at 600 steps and two per
+frame is not a verdict either way — one missing step is invisible at that
+length. The delay costs nothing, so `finishExport` stops the recorder one
+animation frame after the last capture rather than leave the question open.
+
+**Not done here, on the roadmap's own correction:** the live/export split. The
+export renders at the canvas resolution with the current look, which is what
+the live render already does; a preview-quality export would be its own task.
+
+---
+
 # A modulator belongs to a phase, so a leg has its own slot
 
 Date: 2026-09-13

@@ -1568,3 +1568,145 @@ matters, the `docs/decisions.md` entry says so.
   is continuous at the station.
 - Seeking to any step on a leg gives the same position as playing to it.
 - A preset round-trips both slots.
+
+---
+
+## T27 — Timelapse export
+
+- **Kind:** feature
+- **Roadmap:** Phase 5.4
+- **Touches:** `scripts/main.js`, `scripts/Panel.js`, `scripts/Params.js`
+- **Status:** done — see "Timelapse export is a special play, not a mode" in `docs/decisions.md`
+- **Blocked by:** T26, which has landed
+
+**Prompt**
+
+> Record the image building up while the timeline plays, as a video file.
+> Watching a figure form is at least as good as the still it ends in, and with
+> tracks it is repeatable: the same link gives the same film.
+>
+> **It is one button, and it is a special play — not a mode.** Pressing
+> **Export timelapse** does, in order: switch to Exposure, clear the density,
+> seek the clock to 0, restart the seeded stream (`spawnParticles`, the way a
+> new exposure does), then play the timeline from the start and record, and
+> **stop at the end** — `loop` is ignored, a film has an end. When it stops the
+> exposure is paused, the file downloads, and the finished image stays on the
+> canvas exactly as a normal run would leave it: gradeable, saveable as a PNG.
+> Nothing about the panel changes state permanently; whatever was on before the
+> export is restored after it, except that the exposure is now paused with a
+> finished picture in it, which is the point.
+>
+> **Steps per frame, not frames per second.** The clock counts simulation steps,
+> so the natural control is how many steps one video frame gets — a
+> `stepsPerFrame` in `Params`, default 2. Each frame of the export runs that many
+> `step()`s (the clock advances with them, as it already does), renders once,
+> and captures once. This is the fixed-step mode T20's split was made for; do
+> not add a second stepping loop, drive the existing one with a count. The
+> Playback tab shows the resulting film length next to the control:
+> `duration / stepsPerFrame` frames, and the seconds at the recorder's rate.
+>
+> **Record a hidden canvas, not the visible one.** The visible canvas carries
+> the track, the station markers and the focal-point crosses, drawn after the
+> blit; a film of the image must not have them. Give the export its own
+> offscreen canvas that receives `putImageData(imageData)` per frame — the same
+> trick `savePng` uses — and record *that* with `canvas.captureStream(0)` and a
+> `MediaRecorder`. `captureStream(0)` means frames are pushed only when you call
+> `requestFrame()` on the video track, so the recorder gets exactly one frame
+> per export frame and nothing between.
+>
+> **Two traps in `MediaRecorder`, both known, neither worth a dependency:**
+>
+> - **It timestamps frames by wall clock.** If a 4K frame with bloom takes
+>   250 ms to step and render, the video plays slower than the steps-per-frame
+>   arithmetic says, because that is how long the frames really arrived. The
+>   content is still complete and correct — every frame, in order, nothing
+>   dropped. Per-frame timestamps would need WebCodecs plus a muxer, which is a
+>   library; not now. Say so in the panel hint, in one sentence.
+> - **Its default bitrate is low and the result looks smeared.** Set
+>   `videoBitsPerSecond` explicitly and high — tens of megabits — and prefer a
+>   VP9 `mimeType` when `MediaRecorder.isTypeSupported` says so, falling back to
+>   whatever `video/webm` the browser gives. The file is `.webm`; name it like
+>   the PNG, `n-ellipse-<seed>-<w>x<h>.webm`.
+>
+> **The live/export split does not happen here.** The roadmap expected this
+> task to force it. It does not: the export renders at the canvas resolution
+> with the current look, which is exactly what the live render does, so there
+> are no different settings to pass and no reason to refactor `render` into a
+> function of arguments. Leave it. If a *preview-quality* export is ever wanted
+> that is its own task with its own reason.
+>
+> **While exporting, the panel is locked the way playing locks it**, and the
+> Playback status line shows progress (`frame 340 of 600`). A second press
+> during an export cancels it: recorder stopped, no file, state restored.
+> Keyboard shortcuts that would start a new exposure (`r`, `e`) are refused
+> during an export rather than silently wrecking it.
+>
+> **Not in this task:** a preview-resolution export, a PNG sequence, MP4,
+> WebCodecs, and recording Live mode (nothing accumulates there, so there is
+> nothing to watch build).
+
+**Done when**
+
+- One press produces a `.webm` whose first frame is an empty canvas and whose
+  last frame is the finished image, with no overlay in any frame.
+- The density buffer after an export is byte-identical to the one after playing
+  the same timeline from a fresh exposure without recording — the recorder
+  observes the run, it does not change it.
+- Exporting twice from the same link gives the same final frame.
+- The panel shows the film's frame count from `duration` and `stepsPerFrame`,
+  and progress while it runs.
+- Cancelling mid-export leaves no file and restores the previous state.
+- `loop` on does not make the export run forever.
+
+---
+
+## T27b — Lock the whole Parameters tab during an export, and land the last frame
+
+- **Kind:** bug
+- **Roadmap:** Phase 5.4
+- **Touches:** `scripts/Panel.js`, `scripts/main.js`
+- **Status:** done — see the T27b paragraphs of "Timelapse export is a special play, not a mode" in `docs/decisions.md`
+- **Blocked by:** T27, which has landed
+
+**Prompt**
+
+> Two things found reviewing T27.
+>
+> **1. The film can be wrecked from the Parameters tab.** The canvas refuses a
+> `mousedown` during an export and the keyboard refuses every key but `s`, on
+> the stated grounds that a hand on the figure would steer the film. The panel
+> does not: `exportLocked` covers Aspect, Resolution, Particles, Reset, the
+> transport, the seed, Load and the Playback controls, and nothing else. **Add
+> focal point**, every station's `×`, the per-point `x`/`y`/`w` fields, the
+> shared Weight slider, the Manual toggle, tolerance and the step-curve
+> constants are all live. Any of them changes the simulation the recorder is
+> observing — and adding a point runs `insertTrack(0)`, which shifts every
+> track under the running export.
+>
+> Stop enumerating. Lock the **whole Parameters tab** while an export runs: walk
+> the tab body's `input`, `select` and `button` elements and set `disabled`,
+> restoring what each had before (the per-point `w` fields are already disabled
+> in shared mode and must come back that way, not enabled). `exportLocked` can
+> stay for the controls outside that tab. **The Look tab stays live on
+> purpose**: the film is graded per frame, and changing the ramp or the bloom
+> while it records is a legitimate thing to do, not an accident to prevent. Say
+> that in the entry so nobody locks it later out of symmetry.
+>
+> **2. The last frame may not be in the file.** `finishExport` calls
+> `recorder.stop()` in the same tick as the final `requestFrame()`. A frame
+> requested from a `captureStream(0)` reaches the recorder asynchronously, and
+> stopping immediately can drop it — a film whose last frame is one step short
+> of the finished image on the canvas. **Check before fixing**: export, scrub
+> the `.webm` to its very end, compare with the canvas. If it is short, defer
+> the `stop()` by one animation frame (or a short timeout) after the last
+> capture; if it is not, record in the entry that it was checked and how, so
+> the question does not come back.
+
+**Done when**
+
+- With an export running, nothing on the Parameters tab accepts input, and when
+  it ends or is cancelled every control is back in the state it was in — the
+  per-point `w` fields still disabled in shared mode.
+- The Look tab still works during an export.
+- The exported file's last frame is the image left on the canvas, verified by
+  scrubbing to the end, and the entry says so.

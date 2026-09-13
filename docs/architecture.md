@@ -186,9 +186,11 @@ The application. Owns the canvas and its 2D context, the density buffer and its
 `ImageData`, the single `Random` instance and the seed (read from and written to
 the URL hash by `applySeed`), the particle array, the single `NEllipse`, `Params`
 and `Panel` instances, the keyboard bindings, focal-point dragging, PNG and
-preset export, and the resize handler. `resizeCanvas` and `spawnParticles` are the two rebuild
-steps the panel triggers. `particleCorrection` recycles particles that have
-drifted several canvases away back to a random on-canvas position.
+preset export, the timelapse export (`exportRun`, `exportFrame`, a hidden
+canvas recorded with `MediaRecorder`), and the resize handler. `resizeCanvas`
+and `spawnParticles` are the two rebuild steps the panel triggers.
+`particleCorrection` recycles particles that have drifted several canvases away
+back to a random on-canvas position.
 
 ### `index.html` and `styles.css`
 
@@ -202,7 +204,8 @@ hand-written, no framework, a dark surface with one accent colour.
 requestAnimationFrame
    └─ update()
        ├─ exposing && followFocalPoint ? focalPoints[0] ← mouse, in canvas pixels
-       ├─ exposing ? step()                        ← and raise needsRender
+       ├─ exportRun ? exportFrame()                ← stepsPerFrame × step(), render, capture to the hidden canvas
+       ├─ else exposing ? step()                   ← and raise needsRender
        │    ├─ applyTracks()                              ← Animation.at + modulate, before anything moves
        │    ├─ for each particle:
        │    │     error = nEllipse.calcDistance(particle)   ← NEllipse

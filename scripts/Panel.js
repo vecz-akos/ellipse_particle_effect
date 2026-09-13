@@ -204,6 +204,43 @@ export default class Panel {
         return input
     }
 
+    // Controls that would wreck a running timelapse export — a new exposure, a
+    // new canvas, a moved clock — are disabled for its duration.
+    exportLocked(control) {
+        (this.exportLocks ||= []).push(control)
+        return control
+    }
+
+    // Beyond the listed controls, the **whole Parameters tab** is locked: every
+    // control there changes the simulation the recorder is observing, and
+    // adding a point shifts every track under the running export. Each
+    // control's previous disabled state is kept and put back — the per-point w
+    // fields are disabled in shared mode and must come back that way. The Look
+    // tab stays live on purpose: a film is graded per frame, and changing the
+    // ramp or the bloom while it records is legitimate, not an accident.
+    setExporting(on) {
+        this.exporting = on
+        // The tab's snapshot is taken before the listed locks touch anything,
+        // and put back after they release — some of the listed controls sit on
+        // this tab, and a snapshot taken after locking would restore them locked.
+        if (on) {
+            this.parametersWere = new Map()
+            for (const node of this.tabBodies.parameters.querySelectorAll("input, select, button")) {
+                this.parametersWere.set(node, node.disabled)
+                node.disabled = true
+            }
+        }
+        for (const control of this.exportLocks || []) control.disabled = on
+        if (!on && this.parametersWere) {
+            for (const [node, was] of this.parametersWere) node.disabled = was
+            this.parametersWere = null
+        }
+        if (this.exportButton) {
+            setText(this.exportButton, on ? "Cancel export" : "Export timelapse")
+            this.exportButton.classList.toggle("active", on)
+        }
+    }
+
     // A toggle that carries its own label instead of sitting in a labelled row:
     // for the footer, where the controls are named by what they do and a lit
     // button says more than a tick box.
@@ -237,30 +274,30 @@ export default class Panel {
             { canvasChanged, countChanged, weightChanged } = this.handlers
 
         const canvas = this.section(body, "Canvas")
-        this.select(canvas, "Aspect", {
+        this.exportLocked(this.select(canvas, "Aspect", {
             read: () => params.aspect,
             write: (v) => params.aspect = v,
             options: Params.aspects,
             change: canvasChanged
-        })
-        this.select(canvas, "Resolution", {
+        }))
+        this.exportLocked(this.select(canvas, "Resolution", {
             read: () => params.resolution,
             write: (v) => params.resolution = v,
             options: Params.resolutions,
             change: canvasChanged
-        })
+        }))
         this.sizeReadout = el("p", "readout")
         canvas.appendChild(this.sizeReadout)
 
         const simulation = this.section(body, "Simulation")
-        this.slider(simulation, "Particles", {
+        this.exportLocked(this.slider(simulation, "Particles", {
             read: () => params.particleCount,
             write: (v) => params.particleCount = v,
             min: 1000, max: 100_000, step: 1000,
             format: (v) => `${Math.round(v/1000)}k`,
             change: countChanged,
             commit: true
-        })
+        }))
         this.slider(simulation, "Recycle at", {
             read: () => params.tolerance,
             write: (v) => params.tolerance = v,
@@ -316,7 +353,7 @@ export default class Panel {
         })
 
         const defaults = this.section(body, "Defaults")
-        const reset = el("button", "wide", "Reset parameters")
+        const reset = this.exportLocked(el("button", "wide", "Reset parameters"))
         reset.addEventListener("click", () => {
             if (this.handlers.resetParams) this.handlers.resetParams()
         })
@@ -455,18 +492,18 @@ export default class Panel {
         const run = el("div", "modes")
         // The pause button is named for what pressing it does; the mode button
         // is named for the state it is in, which is why only that one lights up.
-        this.toggleButton(run, (on) => on ? "Pause" : "Resume", {
+        this.exportLocked(this.toggleButton(run, (on) => on ? "Pause" : "Resume", {
             read: () => params.exposing,
             write: (v) => params.exposing = v,
             className: "primary",
             hint: "Stop feeding the image; the look stays live (space)"
-        })
-        this.toggleButton(run, (on) => on ? "Exposure" : "Live", {
+        }))
+        this.exportLocked(this.toggleButton(run, (on) => on ? "Exposure" : "Live", {
             read: () => params.accumulate,
             write: (v) => params.accumulate = v,
             className: "mode",
             hint: "Live draws each frame afresh; Exposure keeps what has been drawn (e)"
-        })
+        }))
         footer.appendChild(run)
 
         // Starting over is two clicks on the mode button (Live throws the buffer
@@ -504,11 +541,11 @@ export default class Panel {
         this.seedInput = el("input", "seed")
         this.seedInput.type = "text"
         this.seedInput.spellcheck = false
-        const apply = el("button", null, "Apply")
+        const apply = this.exportLocked(el("button", null, "Apply"))
         apply.addEventListener("click", () => {
             if (this.handlers.seedChanged) this.handlers.seedChanged(this.seedInput.value.trim())
         })
-        const roll = el("button", null, "Roll (r)")
+        const roll = this.exportLocked(el("button", null, "Roll (r)"))
         roll.addEventListener("click", () => {
             if (this.handlers.seedRolled) this.handlers.seedRolled()
         })
@@ -530,7 +567,7 @@ export default class Panel {
         savePreset.addEventListener("click", () => {
             if (this.handlers.savePreset) this.handlers.savePreset()
         })
-        const loadPreset = el("button", null, "Load…")
+        const loadPreset = this.exportLocked(el("button", null, "Load…"))
         // A file input cannot be opened from script without a real click, so the
         // input stays hidden and the button forwards to it.
         const file = el("input")
@@ -557,7 +594,7 @@ export default class Panel {
         const timeline = this.section(body, "Timeline")
 
         const transport = el("div", "modes")
-        this.playButton = this.toggleButton(transport, (on) => on ? "Pause" : "Play", {
+        this.playButton = this.exportLocked(this.toggleButton(transport, (on) => on ? "Pause" : "Play", {
             read: () => animation.playing,
             write: (on) => {
                 // Pressing play on a finished one-shot starts it again rather
@@ -568,26 +605,26 @@ export default class Panel {
                 animation.playing = on
             },
             hint: "The timeline advances one step per simulation step, so it only runs while the exposure does (space)"
-        })
-        this.toggleButton(transport, (on) => on ? "Loop" : "One-shot", {
+        }))
+        this.exportLocked(this.toggleButton(transport, (on) => on ? "Loop" : "One-shot", {
             read: () => params.animation.loop,
             write: (on) => params.animation.loop = on,
             // The reachable end of the timeline differs between the two: a loop
             // never occupies the last step, it wraps past it.
             change: () => this.syncTransport(),
             hint: "One-shot stops at the end; loop wraps back to the start"
-        })
+        }))
         timeline.appendChild(transport)
 
-        this.slider(timeline, "Duration", {
+        this.exportLocked(this.slider(timeline, "Duration", {
             read: () => params.animation.duration,
             write: (value) => params.animation.duration = value,
             min: 60, max: 1200, step: 10,
             format: (value) => `${value} steps`,
             change: () => this.syncTransport()
-        })
+        }))
 
-        this.scrubInput = this.slider(timeline, "Time", {
+        this.scrubInput = this.exportLocked(this.slider(timeline, "Time", {
             read: () => animation.time,
             write: (value) => animation.seek(value, params.animation.duration, params.animation.loop),
             min: 0, max: Math.max(1, Math.round(params.animation.duration)), step: 1,
@@ -599,7 +636,7 @@ export default class Panel {
                 this.refreshTransport()
                 if (this.handlers.timelineSeeked) this.handlers.timelineSeeked()
             }
-        })
+        }))
 
         this.timeReadout = el("p", "readout", "")
         timeline.appendChild(this.timeReadout)
@@ -607,7 +644,34 @@ export default class Panel {
         timeline.appendChild(el("p", "hint", "Scrubbing back does not clear the image — re-running a stretch draws over what is already there. Use the mode button to start a new exposure."))
 
         this.buildTrack(body)
+        this.buildExport(body)
         this.syncTransport()
+    }
+
+    // The timelapse: one button and a special play — see "Timelapse export" in
+    // docs/decisions.md. The pace is steps per frame, because the clock counts
+    // steps; the film length is derived from it and the duration.
+    buildExport(body) {
+        const params = this.params
+        const section = this.section(body, "Timelapse")
+
+        this.exportLocked(this.slider(section, "Steps per frame", {
+            read: () => params.animation.stepsPerFrame,
+            write: (value) => params.animation.stepsPerFrame = value,
+            min: 1, max: 10, step: 1,
+            format: (value) => String(Math.round(value)),
+            change: () => this.syncTransport()
+        }))
+        this.exportReadout = el("p", "readout", "")
+        section.appendChild(this.exportReadout)
+
+        this.exportButton = el("button", "wide", "Export timelapse")
+        this.exportButton.title = "Start a fresh exposure, play the timeline from the start, and record it"
+        this.exportButton.addEventListener("click", () => {
+            if (this.handlers.exportTimelapse) this.handlers.exportTimelapse()
+        })
+        section.appendChild(this.exportButton)
+        section.appendChild(el("p", "hint", "Starts a new exposure and plays the timeline from the start, recording every frame without the overlay; the finished image stays on the canvas, paused. Press again to cancel. Frames are stamped as they arrive, so a slow canvas makes a slower film, never a dropped frame."))
     }
 
     // One track open at a time, chosen here or by clicking the point on the
@@ -1148,6 +1212,16 @@ export default class Panel {
         // Leg lengths and the mini bar's scale are both read off the duration.
         if (this.stationList) this.syncStations()
         this.refreshTransport()
+        this.refreshExportReadout()
+    }
+
+    // The film's length: one frame per stepsPerFrame steps plus the empty first
+    // one, and the seconds that makes at 60 fps — the best case, since the
+    // recorder stamps frames as they arrive.
+    refreshExportReadout() {
+        if (!this.exportReadout || !this.handlers.exportFrames) return
+        const frames = this.handlers.exportFrames()
+        setText(this.exportReadout, `${frames} frames — ${(frames/60).toFixed(1)} s at 60 fps`)
     }
 
     // Runs every frame while the timeline plays, so every write is guarded —

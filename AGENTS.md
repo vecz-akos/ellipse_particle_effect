@@ -134,6 +134,17 @@ Rules for all of it:
   station**, on every edit and every preset load. Without it a dwell can outrun
   its leg and the point teleports. `Animation.at` assumes normalised input; do
   not add a branch there to cope with un-normalised data.
+- **The timelapse export drives the one `step()` with a count; it is not a
+  second loop and not a mode.** `exportRun` in `main.js` is session state —
+  never in `Params` — and while it is set `update()` calls `exportFrame()`
+  instead of `step()`. The recorder observes the run and must not change it:
+  the density after an export is byte-identical to playing the same timeline
+  without one. Anything that would start a new exposure or move the figure
+  mid-export goes through `panel.exportLocked(...)`, the keyboard guard, or the
+  canvas guard — and the **whole Parameters tab is locked as one**, each
+  control restored to its own prior state. The Look tab stays live on purpose:
+  grading a film while it records is a feature. See "Timelapse export is a
+  special play" in `docs/decisions.md`.
 - **`Params.animation` is settings only; the transport's run state lives on the
   `Animation` instance.** `Preset` walks every key of `Params`, so a field put
   there is a field that gets saved — that is how a link once started the timeline
