@@ -102,6 +102,20 @@ Rules for all of it:
   timeline — that is deliberate, not a bug to fix. Wall-clock time would make a
   run depend on the machine and break the reproducibility export needs. See "The
   animation clock counts steps" in `docs/decisions.md`.
+- **A station is only editable while the timeline is stopped and the clock sits
+  exactly on it, and that lock lives in `Panel`, never in `Animation`.** The
+  model has no notion of a past and a preset restores every station regardless.
+  The lock is also what keeps a point from having two writers — a track and the
+  cursor — so do not relax it to "editable while paused anywhere". See "Stations
+  are the track" in `docs/decisions.md`. Retiming a station takes the clock with
+  it, and **a station's `t` is applied on `change`, never on `input`**: the
+  intermediate values of a number being typed would snap onto neighbours, let
+  `normalise` clamp a dwell to zero for good, and burn the figure's detour into
+  a running exposure. The other station fields update live.
+- **`Animation.normalise` clamps every dwell to the gap before the next
+  station**, on every edit and every preset load. Without it a dwell can outrun
+  its leg and the point teleports. `Animation.at` assumes normalised input; do
+  not add a branch there to cope with un-normalised data.
 - **`Params.animation` is settings only; the transport's run state lives on the
   `Animation` instance.** `Preset` walks every key of `Params`, so a field put
   there is a field that gets saved — that is how a link once started the timeline
@@ -159,14 +173,23 @@ Rules for all of it:
   the frame and their size relative to it, and `applyDefaultWeight` so newly
   added points are sized for the canvas you are on; a window resize touches
   neither, because the surviving density was drawn around the figure where it
-  stands.
+  stands. **`rescaleFocalPoints` scales the animation's stations too** — they
+  are figure, and `applyTracks` runs right after it and would otherwise write
+  the old canvas back over the points. Anything new that holds a canvas
+  coordinate belongs in that function.
 - The keyboard handler returns early when the event comes from inside `.panel`,
   so typing a seed does not toggle modes. After changing `Params` from a
   shortcut it calls `panel.sync()`, or the controls would show stale values.
 - **`Panel.sync()` is the whole contract for writing `Params` from outside.** It
   rereads values, recomputes the weight slider's range, clamps `sharedWeight`
   into it, reapplies the shared weight to the points, and locks whichever weight
-  editor is not in charge. Add panel state that `sync` does not restore and the
+  editor is not in charge. **The shared weight is one number for every point
+  and every station**: `applySharedWeight` writes the stations too (through
+  `Animation.setWeight`), or `applyTracks` would put the stations' old weights
+  back on the next step and the Weight slider would do nothing to an animated
+  point. The station's `w` field is the third view of that number and is locked
+  with the per-point one; weight animation is what Manual mode is for. Add
+  panel state that `sync` does not restore and the
   first preset loaded from a differently sized canvas will expose it. It calls
   back into the handlers, so it must not run from the `Panel` constructor — and
   **a handler must never call `sync()` back.** `weightChanged` calls the narrow

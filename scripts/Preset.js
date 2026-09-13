@@ -1,5 +1,6 @@
 import FocalPoint from "./FocalPoint.js"
 import Params from "./Params.js"
+import Animation from "./Animation.js"
 
 const VERSION = 1
 
@@ -33,12 +34,47 @@ const gradientStops = (value) => {
     return stops
 }
 
-// A saved image is the seed, the parameters and the focal points — plus the
-// canvas the points were placed on, so they can be scaled into a different one.
-// Files are user-supplied, so `apply` copies only keys that already exist in
-// Params and whose type matches; anything else is ignored rather than trusted.
+// The animation's tracks, validated whole. All or nothing, the way the gradient
+// is: a half-read track is a movement nobody planned, and no tracks at all is a
+// better answer than that. The identity travels with the stations because T25
+// seeds a modulator's Random from it — restoring the plan but not the id would
+// give the same saved animation different noise.
+const animationTracks = (value, count) => {
+    if (!Array.isArray(value) || value.length !== count) return null
+    const tracks = [],
+        // Identity is the whole reason the id exists — two tracks sharing one
+        // would seed the same modulator noise and tremble in lockstep.
+        seen = new Set()
+    for (const track of value) {
+        if (!track || typeof track !== "object") return null
+        if (typeof track.id !== "string" || !Array.isArray(track.stations)) return null
+        if (seen.has(track.id)) return null
+        seen.add(track.id)
+        const stations = []
+        for (const station of track.stations) {
+            if (!station || typeof station !== "object") return null
+            const numbers = ["time", "x", "y", "weight", "dwell", "cx", "cy"]
+            if (numbers.some(key => !Number.isFinite(station[key]))) return null
+            stations.push({
+                time: Math.max(0, Math.round(station.time)),
+                x: station.x, y: station.y, weight: station.weight,
+                dwell: Math.max(0, station.dwell),
+                curve: station.curve === true,
+                cx: station.cx, cy: station.cy
+            })
+        }
+        tracks.push(Animation.normalise({ id: track.id, stations }))
+    }
+    return tracks
+}
+
+// A saved image is the seed, the parameters, the focal points and their tracks —
+// plus the canvas the points were placed on, so they can be scaled into a
+// different one. Files are user-supplied, so `apply` copies only keys that
+// already exist in Params and whose type matches; anything else is ignored
+// rather than trusted.
 export default class Preset {
-    static capture(params, nEllipse, seed, width, height) {
+    static capture(params, nEllipse, animation, seed, width, height) {
         const saved = {}
         for (const [key, value] of Object.entries(params)) {
             if (SKIP.has(key)) continue
@@ -49,7 +85,7 @@ export default class Preset {
             else saved[key] = value
         }
 
-        return {
+        const document = {
             version: VERSION,
             seed,
             canvas: { width, height },
@@ -57,6 +93,22 @@ export default class Preset {
             focalPoints: nEllipse.focalPoints.map(({ x, y, weight }) =>
                 ({ x: round(x), y: round(y), weight }))
         }
+
+        // Omitted entirely while nothing is animated, which is the normal state
+        // — a link should not carry one empty track per focal point.
+        if (animation && animation.animated) {
+            document.tracks = animation.tracks.map(({ id, stations }) => ({
+                id,
+                stations: stations.map((at) => ({
+                    time: Math.round(at.time),
+                    x: round(at.x), y: round(at.y), weight: at.weight,
+                    dwell: Math.round(at.dwell),
+                    curve: at.curve,
+                    cx: round(at.cx), cy: round(at.cy)
+                }))
+            }))
+        }
+        return document
     }
 
     // What a link does not have to carry. `apply` only touches keys that are
@@ -124,9 +176,9 @@ export default class Preset {
         return JSON.parse(new TextDecoder().decode(bytes))
     }
 
-    // Writes into the given Params and NEllipse, and returns what the caller has
-    // to act on: the seed, and the canvas the coordinates belong to.
-    static apply(data, params, nEllipse) {
+    // Writes into the given Params, NEllipse and Animation, and returns what the
+    // caller has to act on: the seed, and the canvas the coordinates belong to.
+    static apply(data, params, nEllipse, animation=null) {
         // Validate before writing anything: a half-applied preset is worse than
         // a rejected one, and an empty focal-point list is legitimate while a
         // missing one means the file is not what it claims to be.
@@ -164,6 +216,29 @@ export default class Preset {
             .map(p => new FocalPoint(p.x, p.y,
                 Number.isFinite(p.weight) ? p.weight : params.sharedWeight))
         nEllipse.recalculateD()
+
+        // Tracks after the points, because there has to be one per point. A
+        // document without them — or with a set that does not match — gets fresh
+        // empty tracks, which is the un-animated state rather than a failure.
+        if (animation) {
+            const count = nEllipse.focalPoints.length
+            const tracks = "tracks" in data ? animationTracks(data.tracks, count) : null
+            if (tracks) {
+                animation.tracks = tracks
+                // The counter has to clear every id in the file, not merely
+                // count them: a document numbered t3, t1 has two tracks and a
+                // highest suffix of 3, and a counter set from the length would
+                // hand the next point a t3 that is already taken. Ids that are
+                // not of the `tN` shape contribute nothing and cannot collide
+                // with one that is.
+                animation.nextId = tracks.reduce((highest, track) => {
+                    const numbered = /^t(\d+)$/.exec(track.id)
+                    return numbered ? Math.max(highest, Number(numbered[1]) + 1) : highest
+                }, 1)
+            } else {
+                animation.syncTracks(count)
+            }
+        }
 
         const canvas = data.canvas || {}
         return {

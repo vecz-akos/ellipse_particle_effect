@@ -307,6 +307,114 @@ button.wide {
     padding: .2rem .3rem;
 }
 
+/* Playback: the track's stations, and the strip that gives back the one thing
+   an ordered list cannot show — proportion. */
+
+.mini-bar {
+    position: relative;
+    height: 16px;
+    margin: .4rem 0;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: var(--surface);
+    cursor: pointer;
+    overflow: hidden;
+}
+
+.mini-bar.empty {
+    opacity: .4;
+    cursor: default;
+}
+
+/* A dwell is time standing still, so it reads as a block; the gaps between the
+   blocks are the legs. */
+.mini-dwell {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    min-width: 1px;
+    background: var(--accent);
+    opacity: .55;
+}
+
+.mini-marker {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--text);
+}
+
+.station-row {
+    padding: .35rem 0;
+    border-top: 1px solid var(--border);
+}
+
+/* Behind the clock: shown, never editable. */
+.station-row.locked {
+    opacity: .45;
+}
+
+.station-head {
+    display: flex;
+    justify-content: space-between;
+    gap: .3rem;
+    margin-bottom: .25rem;
+}
+
+.station-time {
+    flex: 1;
+    text-align: left;
+    padding: .2rem .4rem;
+    color: var(--text-dim);
+    font-size: 11px;
+}
+
+/* Two rows: t x y above, w and hold below — five in a row was too tight to read. */
+.station-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: .25rem;
+}
+
+.station-fields + .station-fields {
+    grid-template-columns: 1fr 1fr;
+    margin-top: .25rem;
+}
+
+.station-field {
+    display: flex;
+    align-items: center;
+    gap: .15rem;
+    min-width: 0;
+}
+
+.station-field span {
+    color: var(--text-dim);
+    font-size: 10px;
+}
+
+.station-field input {
+    min-width: 0;
+    padding: .15rem .2rem;
+}
+
+.station-leg {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    margin-top: .25rem;
+    color: var(--text-dim);
+    font-size: 11px;
+}
+
+.station-curve {
+    display: flex;
+    align-items: center;
+    gap: .2rem;
+}
+
 .remove {
     padding: .2rem .45rem;
     line-height: 1;

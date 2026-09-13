@@ -1209,3 +1209,126 @@ matters, the `docs/decisions.md` entry says so.
 - `syncTracks(n)` produces the same track ids every time it is called with the
   same `n`.
 - No behaviour change while nothing is animated yet.
+
+---
+
+## T24 — Stations, legs and dwells
+
+- **Kind:** feature
+- **Roadmap:** Phase 5.2
+- **Touches:** `scripts/Animation.js`, `scripts/Panel.js`, `scripts/main.js`, `scripts/Preset.js`
+- **Status:** done
+- **Blocked by:** T23, T23b
+
+**Prompt**
+
+> Make a focal point move. **Read "The words this phase uses" in
+> `docs/roadmap.md` first and use exactly those words** — the parts are easy to
+> confuse, and a dwell in particular is the *opposite* of movement, not a kind of
+> it:
+>
+> - **station** — a position and a weight, at one time on the timeline
+> - **leg** — the transition between two stations; position and weight
+>   interpolate across it, along a straight line or a Bézier curve
+> - **dwell** — time spent held at a station; nothing interpolates
+> - **track** — one focal point's whole plan, a sequence of stations
+>
+> A track alternates `dwell → leg → dwell → leg → dwell`, always. Position and
+> weight both animate; weight is not the lesser half, because changing `d` makes
+> the figure breathe in place rather than travel, which is a different family of
+> images. **Dwell is not padding** — a track without holds draws an even smear,
+> and the stations are where density accumulates and the bright structure comes
+> from.
+>
+> **The station list *is* the track. A leg is not separately creatable.** One
+> ordered list; each entry carries what happens *at* the station (position,
+> weight, dwell) and how it reaches the *next* one (straight or curve, and how
+> many steps). The last station has no "to next"; in loop mode it joins back to
+> the first. Modelling legs as their own addable objects lets the UI hold
+> nonsense — a leg with one endpoint, a gap, an ambiguous order — and every one
+> of those becomes a validation branch. Do not.
+>
+> **Times are absolute steps inside the one global `params.animation.duration`.**
+> There is no per-track duration. A track whose last station comes early holds
+> there to the end. Station times **snap to other tracks' station times**, so
+> points can be made to arrive together without typing matching numbers.
+>
+> **The UI lives in the right-hand panel, on the Playback tab. Do not add a
+> timeline strip along the bottom of the window** — that shape is for showing
+> proportions across many tracks, and what this needs is an ordered list, which
+> reads better in a narrow tall column. The full layout is under "The Playback
+> tab" in `docs/roadmap.md`; the parts that constrain the code:
+>
+> - **One track open at a time**, chosen by a selector *and* by clicking the
+>   point on the canvas — `pickFocalPoint` in `main.js` already does the hit
+>   test, so reuse it rather than inventing a second scheme. That selection is
+>   **interface state, not `Params`**, the same category as `showFocalPoints`.
+> - **A per-track mini time bar** in the track header: ~16px, dwells as blocks,
+>   legs as lines, a marker at the current time, click to seek. A list shows
+>   sequence but not proportion, and this is what gives the proportion back.
+> - **The canvas shows the track**: the curve, markers at the stations, a dot at
+>   the current time, and draggable Bézier handles.
+> - **No track is the normal state.** Most points will never be animated, and a
+>   point without a track simply stands where it is. The existing by-hand
+>   workflow must be unchanged.
+>
+> **Two editing rules, both decided, both with a reason — see "Editing rules on
+> the Playback tab" in `docs/roadmap.md`:**
+>
+> 1. **Editing only while the timeline is stopped.**
+> 2. **A station the clock has already passed cannot be edited.** To change one,
+>    scrub back to it.
+>
+> The second is not fussiness: the exposure accumulates, so what is burned into
+> the image cannot be un-burned, and a panel that let a past station be rewritten
+> would state one thing while the image showed another. Four things follow:
+>
+> - **The lock is in the interface, not in the data.** `Animation` has no notion
+>   of a past, and a preset restores every station regardless. Only the panel
+>   refuses the edit.
+> - **A leg in progress is half locked** — origin frozen, destination editable.
+>   Keep that; re-aiming a point mid-flight falls out of the rule for free.
+> - **Scrubbing back does not clear the image.** Re-running a stretch draws over
+>   what is there, sometimes deliberately. Say so in the panel; clearing stays a
+>   separate action.
+> - **This settles the two-writers trap.** `followFocalPoint` steers point 0 from
+>   the cursor and dragging steers whichever point was grabbed; a point under a
+>   track *and* under the hand would be two writers of one position, with the last
+>   one in the frame winning silently. With editing confined to a stopped
+>   timeline there is only ever one writer. The single gap is dragging while the
+>   clock sits mid-leg, where there is no station to move: refuse it and say to
+>   scrub onto a station.
+>
+> **Seeking must mark the image dirty.** Rendering is change-driven
+> (`needsRender` in `main.js`), and moving the clock now moves the figure. T23
+> could leave `seek` alone because nothing moved; this task cannot.
+>
+> **Tracks go into the preset, identity included.** T23b makes ids stable across a
+> `syncTracks`; the file has to carry them, or the same saved animation will
+> produce different modulator noise once T25 seeds from them. Follow `Preset`'s
+> existing rule — copy only what is present and type-checks, ignore the rest.
+>
+> **Do not change `NEllipse.calcDistance`.** Weight changes go through
+> `setWeight` so `d` is recalculated the one existing way, and the distance term
+> is not touched — that is the constraint keeping appearing and disappearing
+> points out of scope. Weight 0 is a legitimate setting, **not** an off switch:
+> a point at weight 0 still pulls at full strength and shrinks the figure. Do not
+> treat it as removal anywhere.
+>
+> **Not in this task:** modulators of any kind, and export.
+
+**Done when**
+
+- A focal point moves along its stations, interpolating position and weight
+  across legs and holding through dwells, driven by T23's clock.
+- Stations are editable by dragging on the canvas and by typing in the panel,
+  and the two agree.
+- Editing is refused while the timeline plays, and refused for a station the
+  clock has passed; scrubbing back re-enables it.
+- A hand on a point and a track driving it cannot both write its position.
+- Seeking repaints.
+- A track with no stations leaves its point exactly where the old by-hand
+  workflow put it.
+- Tracks survive a preset round-trip, ids included.
+- The same seed, animation and step count produce the same image twice, verified
+  by comparing buffers rather than by eye.

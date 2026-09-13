@@ -11,8 +11,9 @@ export default class Params {
         this.tolerance = 1
         this.step = { offset: 128, scale: 8, bias: 90 }
 
-        // focal points: by default sharedWeight sizes every point at once; with
-        // manualWeight on, each point carries its own and a new one takes
+        // focal points: by default sharedWeight sizes every point — and every
+        // animation station — at once; with manualWeight on, each point carries
+        // its own, stations can differ from it, and a new point takes
         // NEllipse.unit_d. main.js seeds sharedWeight from unit_d.
         this.manualWeight = false
         this.sharedWeight = 0

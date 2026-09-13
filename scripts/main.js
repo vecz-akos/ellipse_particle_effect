@@ -52,6 +52,10 @@ let width = 1,
     particles = [],
     panel = null,
     dragging = -1,
+    // The station or the Bézier handle the hand is moving, when it is not moving
+    // a bare focal point. Never more than one of the three at a time.
+    draggingStation = null,
+    draggingHandle = null,
     // What the canvas frame currently shows, so the class is written only on a
     // transition. null until the first render, which then writes both.
     accumulating = null,
@@ -99,13 +103,16 @@ const applyDefaultWeight = () => {
     nEllipse.recalculateD()
 }
 
-// One weight for every point. Writes go through setWeight so d is recalculated
-// the one existing way.
+// One weight for every point — and every station, or applyTracks would write
+// the stations' old weights back over the points on the next step and the
+// slider would do nothing to an animated point. Point writes go through
+// setWeight so d is recalculated the one existing way.
 const applySharedWeight = () => {
     if (params.manualWeight) return
     for (let i = 0; i < nEllipse.numberOfFocalPoints; i++) {
         nEllipse.setWeight(i, params.sharedWeight)
     }
+    for (const track of animation.tracks) Animation.setWeight(track, params.sharedWeight)
 }
 
 // A deliberate resolution change takes the whole figure with it: the points keep
@@ -122,6 +129,9 @@ const rescaleFocalPoints = (fromWidth, fromHeight) => {
         point.y *= scaleY
         point.weight = Math.round(point.weight*scaleWeight)
     }
+    // The stations too, or applyTracks writes the old canvas back over the
+    // points on the next step.
+    for (const track of animation.tracks) Animation.rescale(track, scaleX, scaleY, scaleWeight)
 }
 
 const spawnParticles = () => {
@@ -155,7 +165,7 @@ const markStateChanged = () => {
 
 const writeHash = () => {
     hashDueAt = 0
-    const state = Preset.capture(params, nEllipse, random.seed, width, height)
+    const state = Preset.capture(params, nEllipse, animation, random.seed, width, height)
     history.replaceState(null, "", `#${Preset.encode(state)}`)
 }
 
@@ -210,8 +220,27 @@ const update = () => {
 
 // Feeding the image: move the particles, then count their hits. The order is
 // what a seed reproduces — leave it alone.
+// Where the timeline says each point is, written before the particles move so a
+// frame's particles see that frame's figure. A track with no stations returns
+// null and its point is left exactly where the by-hand workflow put it.
+const applyTracks = () => {
+    if (!animation.animated) return
+    const { duration, loop } = params.animation
+    animation.tracks.forEach((track, index) => {
+        const point = nEllipse.focalPoints[index]
+        if (!point) return
+        const at = Animation.at(track, animation.time, duration, loop)
+        if (!at) return
+        point.x = at.x
+        point.y = at.y
+        // Through setWeight, so d is recalculated the one existing way.
+        if (point.weight !== at.weight) nEllipse.setWeight(index, at.weight)
+    })
+}
+
 const step = () => {
     let correctionCounter = 0
+    applyTracks()
     for (let p of particles) {
         p.update(nEllipse, random, params.step)
         correctionCounter += particleCorrection(p, random)
@@ -287,6 +316,73 @@ const render = () => {
             ctx.stroke()
         })
     }
+
+    drawTrack(gradient)
+}
+
+// The spatial half of the Playback tab: the open track's legs, a marker at each
+// station, and a dot where the clock is. Drawn on the visible canvas after the
+// blit, so — like the crosses — it never reaches an exported PNG.
+const drawTrack = (gradient) => {
+    if (!panel) return
+    const track = animation.tracks[panel.selectedTrack]
+    if (!track || track.stations.length === 0) return
+
+    const scale = Math.max(1, Math.round(canvasScale())),
+        stations = track.stations,
+        { duration, loop } = params.animation
+
+    ctx.save()
+    ctx.strokeStyle = gradient.top
+    ctx.fillStyle = gradient.top
+    ctx.lineWidth = scale
+
+    // The legs. The last one joins back to the first only when the timeline
+    // loops; a one-shot simply holds at its last station.
+    ctx.globalAlpha = .5
+    ctx.beginPath()
+    stations.forEach((station, index) => {
+        const next = stations[index + 1] || (loop ? stations[0] : null)
+        if (!next) return
+        ctx.moveTo(station.x, station.y)
+        if (station.curve) ctx.quadraticCurveTo(station.cx, station.cy, next.x, next.y)
+        else ctx.lineTo(next.x, next.y)
+    })
+    ctx.stroke()
+
+    // Stations, with the one the clock is sitting on — the editable one — filled.
+    const size = 4*scale
+    ctx.globalAlpha = 1
+    for (const station of stations) {
+        const here = station.time === animation.time
+        ctx.beginPath()
+        ctx.rect(station.x - size, station.y - size, size*2, size*2)
+        if (here && !animation.playing) ctx.fill()
+        else ctx.stroke()
+
+        // The handle of a curved leg, and only while its station is editable:
+        // it is the one the hand may drag.
+        if (station.curve && here && !animation.playing) {
+            ctx.globalAlpha = .5
+            ctx.beginPath()
+            ctx.moveTo(station.x, station.y)
+            ctx.lineTo(station.cx, station.cy)
+            ctx.stroke()
+            ctx.beginPath()
+            ctx.arc(station.cx, station.cy, size, 0, Math.PI*2)
+            ctx.stroke()
+            ctx.globalAlpha = 1
+        }
+    }
+
+    // Where the point is right now, which is not always a station.
+    const at = Animation.at(track, animation.time, duration, loop)
+    if (at) {
+        ctx.beginPath()
+        ctx.arc(at.x, at.y, size*.75, 0, Math.PI*2)
+        ctx.fill()
+    }
+    ctx.restore()
 }
 
 // A red frame means the image is being kept, a quiet one that the exposure is
@@ -339,7 +435,7 @@ const download = (blob, name) => {
 }
 
 const savePreset = () => {
-    const preset = Preset.capture(params, nEllipse, random.seed, width, height)
+    const preset = Preset.capture(params, nEllipse, animation, random.seed, width, height)
     download(new Blob([JSON.stringify(preset, null, 2)], { type: "application/json" }),
         `n-ellipse-${random.seed}.json`)
     panel.setPresetStatus(`Saved as n-ellipse-${random.seed}.json`)
@@ -348,7 +444,7 @@ const savePreset = () => {
 // Shared by the file loader and the state link. Throws if the document is not a
 // valid preset; nothing is written before Preset.apply has accepted it.
 const applyPreset = (data) => {
-    const preset = Preset.apply(data, params, nEllipse)
+    const preset = Preset.apply(data, params, nEllipse, animation)
 
     // The preset carries its own aspect and resolution, and coordinates that
     // belong to the canvas it was made on — so resize first, then scale the
@@ -356,12 +452,12 @@ const applyPreset = (data) => {
     resizeCanvas()
     if (preset.width && preset.height) rescaleFocalPoints(preset.width, preset.height)
     applyDefaultWeight()
-    // The point list was replaced wholesale, so there is no track order to
-    // preserve; the timeline starts at the beginning of the restored animation,
-    // stopped. A preset carries the animation's settings, never its run state.
-    animation.syncTracks(nEllipse.numberOfFocalPoints)
+    // Preset.apply has already restored the tracks, or given fresh empty ones.
+    // The timeline starts at the beginning of the restored animation, stopped:
+    // a preset carries the animation's plan, never its run state.
     animation.playing = false
     animation.seek(0, params.animation.duration, params.animation.loop)
+    applyTracks()
     panel.syncFocalPoints()
     panel.sync()
     applySeed(preset.seed || random.seed)
@@ -412,6 +508,22 @@ const pickFocalPoint = (x, y) => {
     return best
 }
 
+// The station the clock is sitting exactly on, which is the only one the hand
+// may move — see "Editing rules on the Playback tab" in docs/roadmap.md.
+const stationUnderClock = (track) =>
+    track ? track.stations.find(station => station.time === animation.time) : undefined
+
+// The Bézier handle of a curved leg leaving an editable station. Only the open
+// track's handles are draggable, and only the one the clock is on.
+const pickHandle = (x, y) => {
+    if (!panel || animation.playing) return null
+    const track = animation.tracks[panel.selectedTrack]
+    const station = stationUnderClock(track)
+    if (!station || !station.curve) return null
+    const radius = 12*canvasScale()
+    return Math.hypot(station.cx - x, station.cy - y) < radius ? station : null
+}
+
 window.onload = () => {
     resizeCanvas()
     applyDefaultWeight()
@@ -440,6 +552,21 @@ window.onload = () => {
         removeFocalPoint: (index) => removeFocalPoint(index),
         seedChanged: (seed) => applySeed(seed),
         seedRolled: () => applySeed(Random.randomSeed()),
+        // Moving the clock now moves the figure, so it has to repaint — T23
+        // could leave seeking alone because nothing moved.
+        timelineSeeked: () => {
+            applyTracks()
+            panel.refreshFocalValues()
+            needsRender = true
+        },
+        // A station changed: the figure follows it, and the state is saved.
+        animationEdited: () => {
+            applyTracks()
+            panel.refreshFocalValues()
+            markStateChanged()
+        },
+        // The open track is drawn on the canvas, so the selection is picture state.
+        trackSelected: () => { needsRender = true },
         savePng,
         savePreset,
         loadPreset,
@@ -482,24 +609,70 @@ window.onload = () => {
 
     mf.addMouseMoveEventListener()
 
+    // One writer at a time, which is what the editing rules buy: a point under a
+    // track and a point under the hand would otherwise both write its position
+    // and the last one in the frame would win silently.
     canvas.addEventListener("mousedown", (event) => {
         const point = toCanvas(event.clientX, event.clientY)
-        dragging = pickFocalPoint(point.x, point.y)
+
+        draggingHandle = pickHandle(point.x, point.y)
+        if (draggingHandle) return
+
+        const index = pickFocalPoint(point.x, point.y)
+        if (index < 0) return
+        const track = animation.tracks[index]
+
+        // A point with no track is the normal case, and the by-hand workflow is
+        // unchanged for it.
+        if (!track || track.stations.length === 0) {
+            dragging = index
+            return
+        }
+        // Clicking an animated point opens its track, whatever happens next.
+        if (panel.selectedTrack !== index) panel.selectTrack(index)
+
+        if (animation.playing) {
+            panel.setPlaybackStatus("The timeline is running — stop it to move a station.", true)
+            return
+        }
+        const station = stationUnderClock(track)
+        if (!station) {
+            panel.setPlaybackStatus("The clock is between stations. Go to one to move it.", true)
+            return
+        }
+        draggingStation = station
+        panel.setPlaybackStatus(`Moving the station at step ${Math.round(station.time)}.`)
     })
 
     window.addEventListener("mousemove", (event) => {
-        if (dragging < 0) return
-        const focal = nEllipse.focalPoints[dragging]
-        if (!focal) return
+        if (dragging < 0 && !draggingStation && !draggingHandle) return
         const point = toCanvas(event.clientX, event.clientY)
-        focal.x = point.x
-        focal.y = point.y
-        panel.refreshFocalValues()
+
+        if (draggingHandle) {
+            draggingHandle.cx = point.x
+            draggingHandle.cy = point.y
+        } else if (draggingStation) {
+            draggingStation.x = point.x
+            draggingStation.y = point.y
+            // The figure has to follow the station under the cursor, and the
+            // panel's numbers with it.
+            applyTracks()
+            panel.refreshStationValues()
+            panel.refreshFocalValues()
+        } else {
+            const focal = nEllipse.focalPoints[dragging]
+            if (!focal) return
+            focal.x = point.x
+            focal.y = point.y
+            panel.refreshFocalValues()
+        }
         markStateChanged()
     })
 
     window.addEventListener("mouseup", () => {
         dragging = -1
+        draggingStation = null
+        draggingHandle = null
     })
 
     document.body.addEventListener("keydown", (event) => {

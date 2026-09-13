@@ -308,6 +308,9 @@ perturbs the result — at amplitude zero, exactly the stations remain.
 - **Weight**, on the same timeline. This is not a lesser feature than position —
   animating a point's weight changes `d`, so the figure **breathes** in place
   rather than travelling, which is a different family of images entirely.
+  Breathing is the weights *differing*, so it lives in Manual weight mode; with
+  the shared Weight slider in charge, it sizes every station along with every
+  point (see decisions.md, "The shared weight is one number…").
 - **Dwell.** A track is legs *and* holds: stand still at a station for a given
   time so the figure settles and the exposure builds density there. Without
   dwell, a moving focus draws an even smear; with it, the stations become the
@@ -384,12 +387,13 @@ its own decision with its own entry, not a detail of path work.
 
 ### The Playback tab
 
-**The transport half is built (T23).** Duration, play/pause, loop or one-shot and
-a scrub are on the tab, and `scripts/Animation.js` holds the clock and one track
-per focal point. The clock counts simulation steps rather than milliseconds, so
-pausing the exposure pauses the timeline — see "The animation clock counts steps"
-in `docs/decisions.md`. What is left is the per-point half: stations, legs,
-dwells and modulators.
+**Built, apart from the modulators (T23, T23b, T24).** Duration, play/pause,
+loop or one-shot and a scrub are on the tab, and below them the open point's
+track: a station list with times, positions, weights and dwells, a mini time bar,
+a curve toggle per leg, and stations draggable on the canvas. The clock counts
+simulation steps rather than milliseconds, so pausing the exposure pauses the
+timeline. See "The animation clock counts steps" and "Stations are the track" in
+`docs/decisions.md`. What is left on this tab is **modulation**.
 
 **It stays in the right-hand panel. There is no timeline strip along the bottom
 of the window.** A bottom strip is where an editor puts time when it wants to

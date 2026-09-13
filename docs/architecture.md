@@ -157,10 +157,17 @@ and loop, live in `Params` and are passed to `advance` and `seek`, the way
 stops `Preset` from saving it. **Time is
 counted in simulation steps**, one unit per `step`, so a run reproduces exactly
 and a paused exposure holds the timeline with it. Tracks are bound to focal
-points by index and carry only an identity so far: `insertTrack` and
-`removeTrack` follow single edits to the figure, `syncTracks` the paths that
-replace it whole. Paths, dwells and modulators hang off a track later. It touches
-no DOM.
+points by index: `insertTrack` and `removeTrack` follow single edits to the
+figure, `syncTracks` the paths that replace it whole.
+
+A track is an ordered list of **stations** — a position and a weight at one
+absolute time, a **dwell** held there, and whether the **leg** to the next
+station is straight or bends through one Bézier control point. `at` answers
+where the point is at a given time, or `null` when the track has no stations,
+which is the normal state and means the point stands where it was left.
+`normalise` sorts and clamps every dwell to the gap before the next station; `at`
+assumes it has run. It touches no DOM and has no notion of which stations are in
+the past — that lock belongs to `Panel`.
 
 ### `scripts/main.js`
 
@@ -185,6 +192,7 @@ requestAnimationFrame
    └─ update()
        ├─ exposing && followFocalPoint ? focalPoints[0] ← mouse, in canvas pixels
        ├─ exposing ? step()                        ← and raise needsRender
+       │    ├─ applyTracks()                              ← Animation.at, before anything moves
        │    ├─ for each particle:
        │    │     error = nEllipse.calcDistance(particle)   ← NEllipse
        │    │     particle steps by f(error) in a seeded random direction ← Particle, Random

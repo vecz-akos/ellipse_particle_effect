@@ -26,6 +26,137 @@ Paragraphs, tables, lists.
 
 ---
 
+# Stations are the track; a leg is what falls between two of them
+
+Date: 2026-09-09
+
+T24, Phase 5.2. Focal points move now, along a plan that is data rather than a
+gesture.
+
+**One ordered list, not two.** A track is a list of stations; each carries what
+happens *at* it — position, weight, dwell — and how the point leaves it for the
+next one. A **leg** is therefore never a separate object, and cannot be
+half-made: no leg with one endpoint, no gap, no ambiguous order, and no second
+list to keep in step. Deleting a station rejoins its neighbours by itself.
+
+**A quadratic Bézier, not a cubic.** One control point per leg means one handle
+to drag and two numbers to save, and it draws every arc this needs. The handle
+belongs to the station the leg *leaves*, which is what makes "the curve is a
+property of the leg" true without a leg object to hang it on. A new station's
+control point sits on the station itself, so switching `curve` on changes
+nothing until the handle is moved.
+
+**The dwell clamp is what keeps motion continuous.** A dwell allowed to run past
+the next station leaves the leg negative room, and the point then jumps from
+where it is holding to somewhere along a leg it never started. Rather than teach
+the evaluator to interpret that, `Animation.normalise` clamps every dwell to the
+gap before the next station, on every edit and on every load — a hand-edited
+preset gets the same treatment. A dwell that exactly *fills* the gap is left
+alone: that is a deliberate hard cut, the panel shows the leg as `0 steps`, and
+it is the user's to make.
+
+**Editing is locked to the clock, and the lock is in the panel.** A station can
+be edited only while the timeline is stopped *and* the clock sits exactly on it;
+clicking a station's step number is what takes you there. The reason is honesty
+rather than caution — the exposure accumulates, so a panel that let a past
+station be rewritten would state one thing while the image showed another.
+`Animation` has no notion of a past and a preset restores every station
+regardless: only the panel refuses. One consequence, found in use: typing a new
+`t` moves the station away from the clock, and the rule as stated would lock it
+under the cursor mid-edit. So the clock follows — committing a `t` seeks to it,
+and `snapTime` clamps to where the clock can actually stand (one short of the
+span in a loop), or a station typed past the end would be unreachable for good.
+*Committing*, not typing (T24c): applied per keystroke, 150 typed over a 5
+passes through 1 and 15, and each would snap the station onto a neighbour, let
+`normalise` clamp a dwell to zero that never comes back, and burn the figure's
+detour into a running exposure — "the timeline is stopped" does not pause the
+exposure. The other fields stay live; a wrong x for one keystroke is harmless.
+
+That rule also settles the two-writers problem for free. A point under a track
+and a point under the cursor would both write its position, with the last one in
+the frame winning silently. Now there is only ever one writer: a point with no
+stations is dragged exactly as before, a point with stations is dragged only
+through the station the clock is on, and dragging one mid-leg is refused with a
+message rather than ignored.
+
+**Times are absolute, and snap to other tracks.** There is no per-track
+duration; a station's time is a step inside the one global `duration`, and a
+track whose last station comes early holds there to the end. Typing a time near
+another *track's* station lands on it exactly, which is how two points are made
+to arrive together. A station does not snap to itself or to its own neighbours —
+that would make nudging a time one step at a time impossible.
+
+**Tracks travel in the preset, ids included**, validated whole the way the
+gradient is: one malformed station and the whole track list is refused, because
+a half-read plan is a movement nobody chose. The ids matter because T25 seeds a
+modulator's `Random` from them. Nothing is written when no track has a station,
+so an un-animated figure's link stays the length it was.
+
+**Two ways an id could stop being unique, both closed.** Caught in review before
+this landed, and worth recording because the failure would have surfaced only in
+T25, as two tracks trembling in lockstep — the one thing the identity exists to
+prevent. First, the id counter is now raised past the **largest numeric suffix in
+the file** rather than set from the number of tracks: a document numbered `t3,
+t1` has two tracks and a highest suffix of three, so a counter set to three would
+hand the next point a `t3` that is already taken. Second, a document that repeats
+an id is refused whole, alongside the other malformed shapes — an untrusted file
+is exactly where a duplicate comes from. The invariant the counter owes, stated
+where it is minted: **`nextId` is greater than every numeric suffix currently in
+the list.**
+
+**Stations are figure, so they rescale with it.** Also caught in review.
+`rescaleFocalPoints` takes a figure into a different canvas — a preset loaded
+from another resolution, or the aspect and resolution dropdowns — by scaling
+every point's position and weight. Stations were not scaled with them, and
+because `applyTracks` runs straight afterwards, it wrote the *old* canvas'
+coordinates back over the freshly rescaled points: for an animated point the
+resize did nothing at all. `Animation.rescale` now applies the same three
+factors to every station's position, control point and weight, and
+`rescaleFocalPoints` calls it. This rarely showed, because a preset restores its
+own aspect and resolution and the canvas usually matches — which is exactly why
+it needed a check rather than a look.
+
+**The shared weight is one number for every point and every station.** The third
+review finding was a quiet contradiction rather than a bug: `applyTracks` writes a
+station's weight onto its point every step, and with Manual off
+`applySharedWeight` writes the slider's value onto every point — so on an
+animated point the two overwrote each other and the Weight slider visibly did
+nothing. Worse, the station's `w` field was editable in shared mode while the
+per-point `w` on the Parameters tab was not, so a weight could be typed in
+through the back door that the front door refused. Two resolutions were on the
+table: make a point with stations leave the shared weight, or make the station's
+weight live only in Manual mode. The first silently kills a slider for some
+points and not others. The second is what landed, but stated the other way
+round: the shared weight is not *ignored* by stations, it *reaches* them.
+`applySharedWeight` writes the stations as well as the points, so the slider
+sizes an animated figure exactly as it sizes a still one, `applyTracks` has
+nothing different to say, and switching to Manual afterwards finds every station
+holding the shared value — the same hand-over the per-point weights already had.
+The station's `w` field is locked together with the per-point one, so the two
+tabs agree about who may write a weight. The cost is that a figure cannot
+breathe in shared mode; breathing is the figure's weights *differing*, which is
+what Manual mode means, and the Track section says so.
+
+**What the panel had to learn.** Derived values go stale on a keystroke: a leg's
+length is two stations' times minus a dwell, so it is refreshed in place while
+typing, and the list is only *rebuilt* on `change` — reordering under a cursor is
+what the colour ramp's stops already avoid. The station locks are re-evaluated
+every frame and written only when the set of unlocked stations changes.
+
+**Verified** — the model against 27 checks (dwell, leg, curve, the loop's
+join back to the first station, sorting, the clamp, and 600 samples proving the
+evaluation is pure), the preset against 18 (round trip with ids, a fresh id for a
+point added after a load, a document whose numbering skips a value, and six kinds
+of damaged document each refused whole),
+and the real `Panel` against 44 driven through a hand-rolled DOM: adding
+stations, the lock behind the clock, refusing to remove a locked one, snapping,
+the mini bar's click-to-seek, and the dwell clamp. The image itself: two runs at
+the same seed and animation produce identical density buffers, an animated run
+differs from a still one, and the point without a track ends exactly where the
+by-hand workflow left it.
+
+---
+
 # Run state stays off `Params`
 
 Date: 2026-09-09

@@ -1,5 +1,6 @@
 import Params from "./Params.js"
 import Gradient from "./Gradient.js"
+import Animation from "./Animation.js"
 
 const el = (tag, className, text) => {
     const node = document.createElement(tag)
@@ -571,7 +572,7 @@ export default class Panel {
         this.slider(timeline, "Duration", {
             read: () => params.animation.duration,
             write: (value) => params.animation.duration = value,
-            min: 60, max: 6000, step: 10,
+            min: 60, max: 1200, step: 10,
             format: (value) => `${value} steps`,
             change: () => this.syncTransport()
         })
@@ -582,16 +583,408 @@ export default class Panel {
             min: 0, max: Math.max(1, Math.round(params.animation.duration)), step: 1,
             format: (value) => String(Math.round(value)),
             // The readout only repaints itself while the transport runs, so a
-            // scrub on a stopped timeline has to ask for it.
-            change: () => this.refreshTransport()
+            // scrub on a stopped timeline has to ask for it — and the figure
+            // moves with the clock now.
+            change: () => {
+                this.refreshTransport()
+                if (this.handlers.timelineSeeked) this.handlers.timelineSeeked()
+            }
         })
 
         this.timeReadout = el("p", "readout", "")
         timeline.appendChild(this.timeReadout)
         timeline.appendChild(el("p", "hint", "Duration is counted in simulation steps rather than seconds, so a run reproduces exactly. At 60 fps a step is about 17 ms."))
-        timeline.appendChild(el("p", "hint", "Nothing moves yet: paths, dwells and modulators come next — see Phase 5 in docs/roadmap.md."))
+        timeline.appendChild(el("p", "hint", "Scrubbing back does not clear the image — re-running a stretch draws over what is already there. Use the mode button to start a new exposure."))
 
+        this.buildTrack(body)
         this.syncTransport()
+    }
+
+    // One track open at a time, chosen here or by clicking the point on the
+    // canvas. Four levels of accordion would be unusable in a narrow column —
+    // see "The Playback tab" in docs/roadmap.md.
+    buildTrack(body) {
+        const section = this.section(body, "Track")
+
+        this.trackSelect = el("select")
+        this.trackSelect.addEventListener("change", () => {
+            this.selectTrack(Number(this.trackSelect.value))
+        })
+        this.row(section, "Point", this.trackSelect)
+
+        this.miniBar = el("div", "mini-bar")
+        this.miniBar.addEventListener("mousedown", (event) => this.seekFromMiniBar(event))
+        section.appendChild(this.miniBar)
+
+        this.stationList = el("div", "station-list")
+        section.appendChild(this.stationList)
+
+        this.addStationButton = el("button", "wide", "Add station here")
+        this.addStationButton.title = "A station at the current time, at the point's current position and weight"
+        this.addStationButton.addEventListener("click", () => this.addStation())
+        section.appendChild(this.addStationButton)
+
+        this.playbackStatus = el("p", "hint", "")
+        section.appendChild(this.playbackStatus)
+        section.appendChild(el("p", "hint", "A station can only be edited while the timeline is stopped and the clock sits exactly on it — click a station's step number to go there. What the exposure has already burned in cannot be un-burned."))
+        section.appendChild(el("p", "hint", "While the shared Weight slider is in charge it sizes every station too; turn Manual on (Parameters tab) to animate a point's weight."))
+
+        this.selectedTrack = -1
+        this.syncTracks()
+    }
+
+    // The selector and the station list, rebuilt rather than patched: both
+    // change only when the figure or the plan does, never per frame.
+    syncTracks() {
+        const points = this.nEllipse.focalPoints
+        if (this.selectedTrack >= points.length) this.selectedTrack = points.length - 1
+        if (points.length === 0) this.selectedTrack = -1
+
+        this.trackSelect.textContent = ""
+        const none = el("option", null, points.length === 0 ? "No focal points" : "None")
+        none.value = "-1"
+        this.trackSelect.appendChild(none)
+        points.forEach((point, index) => {
+            const stations = this.animation.tracks[index]
+                ? this.animation.tracks[index].stations.length : 0
+            const option = el("option", null,
+                `Point ${index + 1}${stations > 0 ? ` — ${stations} stations` : ""}`)
+            option.value = String(index)
+            this.trackSelect.appendChild(option)
+        })
+        this.trackSelect.value = String(this.selectedTrack)
+        this.trackSelect.disabled = points.length === 0
+
+        this.syncStations()
+    }
+
+    selectTrack(index) {
+        const points = this.nEllipse.focalPoints.length
+        this.selectedTrack = index >= 0 && index < points ? index : -1
+        this.trackSelect.value = String(this.selectedTrack)
+        this.syncStations()
+        // The canvas draws the open track, so the selection changes the picture.
+        if (this.handlers.trackSelected) this.handlers.trackSelected()
+    }
+
+    get openTrack() {
+        return this.animation.tracks[this.selectedTrack] || null
+    }
+
+    // A station is editable only while the timeline is stopped and the clock is
+    // exactly on it. The lock lives here and not in Animation: a preset restores
+    // every station regardless, and the model has no notion of a past. See
+    // "Editing rules on the Playback tab" in docs/roadmap.md.
+    stationLocked(station) {
+        return this.animation.playing || this.animation.time !== station.time
+    }
+
+    addStation() {
+        const track = this.openTrack
+        const point = this.nEllipse.focalPoints[this.selectedTrack]
+        if (!track || !point) return
+        if (this.animation.playing) {
+            this.setPlaybackStatus("Stop the timeline before editing a track.", true)
+            return
+        }
+        const time = this.animation.time
+        if (track.stations.some(station => station.time === time)) {
+            this.setPlaybackStatus(`There is already a station at step ${time}.`, true)
+            return
+        }
+        this.animation.addStation(track, {
+            time, x: point.x, y: point.y, weight: point.weight,
+            // A control point on the station itself makes the curve start out
+            // straight, so turning `curve` on changes nothing until it is dragged.
+            cx: point.x, cy: point.y
+        })
+        this.setPlaybackStatus(`Station added at step ${time}.`)
+        this.touched()
+        this.syncTracks()
+        if (this.handlers.animationEdited) this.handlers.animationEdited()
+    }
+
+    // Times snap to other tracks' station times, so points can be made to arrive
+    // together without typing matching numbers.
+    snapTime(time, exclude) {
+        const span = Math.max(1, Math.round(this.params.animation.duration))
+        // Clamped to where the clock can actually stand — a loop never
+        // occupies its last step — so a station typed past the end does not
+        // land where the clock can never reach it.
+        const last = this.params.animation.loop ? span - 1 : span
+        const tolerance = Math.max(2, Math.round(span*.01))
+        let best = Math.min(last, Math.max(0, Math.round(time))), distance = tolerance + 1
+        for (const track of this.animation.tracks) {
+            for (const station of track.stations) {
+                if (station === exclude) continue
+                const gap = Math.abs(station.time - time)
+                if (gap <= tolerance && gap < distance) {
+                    distance = gap
+                    best = station.time
+                }
+            }
+        }
+        return best
+    }
+
+    stationField(row, label, station, key, { step=1, min=null, integer=true }={}) {
+        const field = el("label", "station-field")
+        field.appendChild(el("span", null, label))
+        const input = el("input")
+        input.type = "number"
+        input.step = step
+        if (min !== null) input.min = min
+        input.value = integer ? Math.round(station[key]) : station[key]
+        const read = () => {
+            const value = Number(input.value)
+            return Number.isNaN(value) ? null : value
+        }
+        if (key === "time") {
+            // The time is applied on commit only. Typing 150 over a 5 passes
+            // through 1 and 15, and applying those would snap the station onto
+            // a neighbour, let normalise clamp its dwell to zero for good, and
+            // burn the figure's detour into a running exposure. A wrong x is
+            // harmless for a keystroke; a wrong t is not.
+            input.addEventListener("change", () => {
+                const value = read()
+                if (value === null) return
+                station.time = this.snapTime(value, station)
+                // The lock is "the clock sits on the station", so moving the
+                // station would lock it under the cursor: the clock goes with it.
+                this.seekTo(station.time)
+                this.editedStation(station)
+                this.syncTracks()
+            })
+        } else {
+            input.addEventListener("input", () => {
+                const value = read()
+                if (value === null) return
+                station[key] = value
+                this.editedStation(station)
+            })
+        }
+        // Rebuilding on every keystroke would reorder the list under the cursor
+        // — the ramp's stops wait for the same reason. Leg lengths update live
+        // through refreshLegs; the order and the locks wait for the field.
+        if (key === "dwell") {
+            input.addEventListener("change", () => this.syncTracks())
+        }
+        field.appendChild(input)
+        row.appendChild(field)
+        return input
+    }
+
+    // One place for everything an edit has to do: keep the list well formed,
+    // move the figure to match, and tell the app the state changed.
+    editedStation() {
+        const track = this.openTrack
+        if (track) Animation.normalise(track)
+        this.refreshLegs()
+        this.syncMiniBar()
+        this.touched()
+        if (this.handlers.animationEdited) this.handlers.animationEdited()
+    }
+
+    // A leg's length is derived from two stations' times and a dwell, so it goes
+    // stale the moment any of the three is typed into. Cheap enough to redo in
+    // place rather than rebuilding the rows.
+    refreshLegs() {
+        const track = this.openTrack
+        if (!track || !this.stationRows) return
+        const span = Math.max(1, Math.round(this.params.animation.duration))
+        this.stationRows.forEach(({ legLength }, index) => {
+            const station = track.stations[index]
+            if (!station || !legLength) return
+            const next = track.stations[index + 1]
+            const arrives = next ? next.time : span
+            const steps = Math.max(0, Math.round(arrives - station.time - Math.max(0, station.dwell)))
+            setText(legLength, !next && !this.params.animation.loop
+                ? "holds to the end"
+                : `↓ ${steps} steps${next ? "" : " back to the first"}`)
+        })
+    }
+
+    syncStations() {
+        const track = this.openTrack
+        this.stationList.textContent = ""
+        this.stationRows = []
+        this.addStationButton.disabled = !track
+
+        if (!track) {
+            this.stationList.appendChild(el("p", "hint",
+                this.nEllipse.focalPoints.length === 0
+                    ? "Add a focal point first."
+                    : "No point selected. Choose one above, or click it on the canvas."))
+            this.syncMiniBar()
+            return
+        }
+        if (track.stations.length === 0) {
+            this.stationList.appendChild(el("p", "hint",
+                "No stations — this point stands where you put it. Add one to start a track."))
+        }
+
+        const span = Math.max(1, Math.round(this.params.animation.duration))
+        track.stations.forEach((station, index) => {
+            const row = el("div", "station-row")
+
+            const head = el("div", "station-head")
+            // The way back to a locked station: seeking here unlocks it.
+            const at = el("button", "station-time", `${index + 1}. step ${Math.round(station.time)}`)
+            at.title = "Move the clock to this station"
+            at.addEventListener("click", () => this.seekTo(station.time))
+            head.appendChild(at)
+            const remove = el("button", "remove", "×")
+            remove.title = "Remove this station"
+            remove.addEventListener("click", () => this.removeStation(index))
+            head.appendChild(remove)
+            row.appendChild(head)
+
+            // Where and when on the first row, how much and how long on the
+            // second — five fields across was too tight to read.
+            const where = el("div", "station-fields")
+            const howLong = el("div", "station-fields")
+            const inputs = {
+                time: this.stationField(where, "t", station, "time", { min: 0 }),
+                x: this.stationField(where, "x", station, "x"),
+                y: this.stationField(where, "y", station, "y"),
+                weight: this.stationField(howLong, "w", station, "weight", { step: 10 }),
+                dwell: this.stationField(howLong, "hold", station, "dwell", { step: 10, min: 0 })
+            }
+            row.appendChild(where)
+            row.appendChild(howLong)
+
+            const next = track.stations[index + 1]
+            const isLast = !next
+            const arrives = next ? next.time : span
+            const legSteps = Math.max(0, Math.round(arrives - station.time - Math.max(0, station.dwell)))
+            const leg = el("div", "station-leg")
+            const curve = el("input")
+            curve.type = "checkbox"
+            curve.checked = station.curve
+            curve.addEventListener("change", () => {
+                station.curve = curve.checked
+                this.editedStation(station)
+            })
+            const curveLabel = el("label", "station-curve")
+            curveLabel.appendChild(curve)
+            curveLabel.appendChild(el("span", null, "curve"))
+            leg.appendChild(curveLabel)
+            const legLength = el("span", "station-leg-length",
+                isLast && !this.params.animation.loop
+                    ? "holds to the end"
+                    : `↓ ${legSteps} steps${isLast ? " back to the first" : ""}`)
+            leg.appendChild(legLength)
+            row.appendChild(leg)
+
+            this.stationList.appendChild(row)
+            this.stationRows.push({ row, inputs, curve, station, legLength })
+        })
+
+        this.syncMiniBar()
+        this.syncStationLocks(true)
+    }
+
+    // Disabled state follows the clock, so it is re-evaluated per frame — but
+    // only written when the set of unlocked stations actually changes. The
+    // station's w field is also the shared weight's third view, so it is locked
+    // with the per-point one while that is in charge.
+    syncStationLocks(force=false) {
+        if (!this.stationRows) return
+        const shared = !this.params.manualWeight
+        const signature = (shared ? "s" : "m")
+            + this.stationRows.map(({ station }) => this.stationLocked(station) ? "1" : "0").join("")
+        if (!force && signature === this.shownLocks) return
+        this.shownLocks = signature
+
+        this.stationRows.forEach(({ row, inputs, curve, station }) => {
+            const locked = this.stationLocked(station)
+            row.classList.toggle("locked", locked)
+            for (const input of Object.values(inputs)) input.disabled = locked
+            inputs.weight.disabled = locked || shared
+            curve.disabled = locked
+        })
+    }
+
+    // Sequence without proportion is what a list cannot show: dwells as blocks,
+    // legs as lines, a marker at the current time.
+    syncMiniBar() {
+        const track = this.openTrack
+        const span = Math.max(1, Math.round(this.params.animation.duration))
+        this.miniBar.textContent = ""
+        this.miniBar.classList.toggle("empty", !track || track.stations.length === 0)
+
+        if (track) {
+            for (const station of track.stations) {
+                const dwell = Math.max(0, Math.min(station.dwell, span - station.time))
+                const block = el("div", "mini-dwell")
+                block.style.left = `${station.time/span*100}%`
+                // A zero dwell still needs to be visible as a mark on the bar.
+                block.style.width = `${Math.max(dwell/span*100, .6)}%`
+                this.miniBar.appendChild(block)
+            }
+        }
+        this.miniMarker = el("div", "mini-marker")
+        this.miniBar.appendChild(this.miniMarker)
+        this.shownMarker = null
+        this.moveMiniMarker()
+    }
+
+    moveMiniMarker() {
+        if (!this.miniMarker) return
+        const span = Math.max(1, Math.round(this.params.animation.duration))
+        const left = `${Math.min(100, this.animation.time/span*100)}%`
+        if (left !== this.shownMarker) {
+            this.shownMarker = left
+            this.miniMarker.style.left = left
+        }
+    }
+
+    seekFromMiniBar(event) {
+        const rect = this.miniBar.getBoundingClientRect()
+        if (!rect.width) return
+        const span = Math.max(1, Math.round(this.params.animation.duration))
+        const raw = (event.clientX - rect.left)/rect.width*span
+        // Clicking near a station lands on it, which is what makes it editable.
+        this.seekTo(this.snapTime(raw, null))
+    }
+
+    seekTo(time) {
+        this.animation.seek(time, this.params.animation.duration, this.params.animation.loop)
+        this.refreshTransport()
+        if (this.handlers.timelineSeeked) this.handlers.timelineSeeked()
+    }
+
+    removeStation(index) {
+        const track = this.openTrack
+        if (!track) return
+        if (this.animation.playing) {
+            this.setPlaybackStatus("Stop the timeline before editing a track.", true)
+            return
+        }
+        if (this.stationLocked(track.stations[index])) {
+            this.setPlaybackStatus("That station is behind the clock. Go to it first.", true)
+            return
+        }
+        this.animation.removeStation(track, index)
+        this.touched()
+        this.syncTracks()
+        if (this.handlers.animationEdited) this.handlers.animationEdited()
+    }
+
+    setPlaybackStatus(text, failed=false) {
+        setText(this.playbackStatus, text)
+        this.playbackStatus.classList.toggle("failed", failed)
+    }
+
+    // The canvas moved a station or a handle: the numbers follow without
+    // rebuilding the rows, which would pull the cursor out of a field.
+    refreshStationValues() {
+        if (!this.stationRows) return
+        for (const { inputs, station } of this.stationRows) {
+            setNumber(inputs.x, station.x)
+            setNumber(inputs.y, station.y)
+            setNumber(inputs.weight, station.weight)
+        }
     }
 
     // Not on a per-frame path: the scrub's range follows the duration, and a
@@ -603,6 +996,8 @@ export default class Panel {
         // slider should be able to offer.
         this.scrubInput.max = loop ? span - 1 : span
         this.animation.seek(this.animation.time, span, loop)
+        // Leg lengths and the mini bar's scale are both read off the duration.
+        if (this.stationList) this.syncStations()
         this.refreshTransport()
     }
 
@@ -624,6 +1019,11 @@ export default class Panel {
             setText(this.playButton, playing ? "Pause" : "Play")
             this.playButton.classList.toggle("active", playing)
         }
+
+        this.moveMiniMarker()
+        // Which stations are editable follows the clock, so it has to be checked
+        // as often as the clock moves — the write inside is what is guarded.
+        this.syncStationLocks()
     }
 
     // Rebuilds the focal-point rows. Called when a point is added or removed;
@@ -668,6 +1068,9 @@ export default class Panel {
             this.focalList.appendChild(el("p", "hint", "No focal points — the particles wander freely."))
         }
         this.syncWeightControls()
+        // The track selector lists the points, so it is rebuilt with them.
+        // Guarded: the focal rows are built before the Playback tab exists.
+        if (this.trackSelect) this.syncTracks()
     }
 
     // The colour ramp's stops, rebuilt rather than patched — the focal-point
@@ -742,13 +1145,17 @@ export default class Panel {
         this.sortGradientStops()
     }
 
-    // The shared weight and the per-row w fields are two views of one number, so
-    // exactly one of them is editable at a time.
+    // The shared weight, the per-row w fields and the stations' w fields are
+    // three views of one number, so exactly one of them is editable at a time.
     syncWeightControls() {
         const shared = !this.params.manualWeight
         this.sharedWeightInput.disabled = !shared
         for (const inputs of this.focalRows) inputs.weight.disabled = shared
         this.refreshFocalValues()
+        // The station rows are built after the focal rows, so on the first pass
+        // there are none yet; both are guarded inside.
+        this.refreshStationValues()
+        this.syncStationLocks()
     }
 
     // Derived, never stored: an eighth of the shorter canvas side up to one and
@@ -809,7 +1216,8 @@ export default class Panel {
         // of rows, so a preset or a reset has to rebuild it.
         this.syncGradientStops()
         // Nor is the scrub's range, which follows the duration that has just
-        // been restored.
+        // been restored, or the track list, which follows the focal points.
+        this.syncTracks()
         this.syncTransport()
     }
 }

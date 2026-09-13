@@ -62,9 +62,11 @@ scaled to fit it whole.
 - **Render** — the seed (type one and apply it, or roll a new one), PNG save at
   the current canvas resolution, and presets as JSON. The URL follows the state
   on its own; the preset file is for keeping one on disk.
-- **Playback** — the timeline: a duration, play/pause, loop or one-shot, and a
-  scrub. Nothing moves along it yet — focal-point paths and modulators are the
-  next two steps of Phase 5.
+- **Playback** — the timeline (duration, play/pause, loop or one-shot, a scrub)
+  and, below it, the open point's **track**: an ordered list of **stations**.
+  Each station is a position and a weight at one step of the timeline, held for
+  a **dwell**, with a straight or curved **leg** to the next one. Most points
+  never get a track and simply stand where you put them.
 
 Four buttons sit in a strip at the bottom of the panel, outside the tabs, so
 they are visible whichever tab is open: **Pause / Resume** and the
@@ -106,6 +108,35 @@ points stopped feeding fade back over time: the tone map normalises to a white
 point that keeps rising with the densest area, so a long run behaves like an
 exposure with a slowly closing aperture.
 
+## Moving a focal point on a timeline
+
+Dragging a point while the exposure runs is the fast way to steer the image, and
+it has one bad property: the gesture is the artwork and cannot be edited. The
+**Playback** tab makes the movement data instead.
+
+Pick a point — from the selector, or by clicking it on the canvas — and press
+**Add station here**. That records the point's current position and weight at the
+current step. Add another somewhere else on the timeline and the point travels
+between them, dragging its weight along too, so the figure can breathe in place
+as well as move. **Hold** is how long it stands still at a station, and it is
+where the image gets its bright structure: without holds a moving focus draws an
+even smear.
+
+Two rules that will look like restrictions and are not:
+
+- **You can only edit a station while the timeline is stopped and the clock is
+  sitting exactly on it.** Click a station's step number to go there. Retiming
+  a station takes the clock with it, so its `t` can be edited without losing it.
+- **Scrubbing back does not erase anything.** What the exposure has already
+  burned in cannot be un-burned, so the panel refuses to rewrite a station you
+  have already run past rather than letting the plan and the picture disagree.
+  Re-running a stretch draws over what is there, which is sometimes what you
+  want.
+
+Station times snap to other points' station times, so two points can be made to
+arrive together without typing matching numbers. A point with no stations is
+untouched by any of this.
+
 **Pausing stops the exposure, not the app.** Nothing is added to the image and
 the particles stand still, but everything else keeps working — so the way to
 finish an image is to pause it and then take your time on the Look tab. Every
@@ -131,9 +162,9 @@ on. **Load…** reads one back: the canvas is resized to the preset's aspect and
 resolution, the figure is scaled into it, and the run restarts from the saved
 seed. Whether the simulation is running, whether a point follows the mouse and
 whether the focal-point crosses are shown are not saved; everything that shapes
-the image is. The timeline's duration and loop mode are saved; whether it is
-running and where the playhead sits are not, so a loaded preset starts at the
-beginning, stopped.
+the image is — including every point's track. The timeline's duration and loop
+mode are saved; whether it is running and where the playhead sits are not, so a
+loaded preset starts at the beginning, stopped.
 
 The file keeps every field, while the link carries only what differs from the
 defaults — a link is shared and ephemeral, a saved file is what you come back to
