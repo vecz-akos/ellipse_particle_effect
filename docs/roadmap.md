@@ -332,7 +332,8 @@ perturbs the result — at amplitude zero, exactly the stations remain.
   seed** — never a state carried from the previous step. A drift written as a
   random walk cannot be seeked and cannot be reproduced; written as seeded value
   noise it can be both. **Built on dwells (T25) — see "Modulators are functions
-  of phase time" and "Waves per dwell" in `docs/decisions.md`;** legs are T26.
+  of phase time" and "Waves per dwell" in `docs/decisions.md`; on legs (T26) —
+  "A modulator belongs to a phase".**
   The periodic kinds count waves per phase, so a whole number returns the point
   to the station as the hold ends; amplitudes are pixels; the drift is a sum of
   seeded sines, the tremor a hash of the step.
@@ -396,15 +397,15 @@ its own decision with its own entry, not a detail of path work.
 
 ### The Playback tab
 
-**Built (T23, T23b, T24, T25), apart from the leg modulators.** Duration,
-play/pause, loop or one-shot and a scrub are on the tab, and below them the open
-point's track: a Dwell modulation block with the track's default, a station list
-with times, positions, weights, dwells and a per-station modulation override, a
-mini time bar, a curve toggle per leg, and stations draggable on the canvas. The
-clock counts simulation steps rather than milliseconds, so pausing the exposure
-pauses the timeline. See "The animation clock counts steps", "Stations are the
-track" and "Modulators are functions of phase time" in `docs/decisions.md`. What
-is left on this tab is the **leg slot** (T26).
+**Built (T23, T23b, T24, T25, T25b, T26).** Duration, play/pause, loop or
+one-shot and a scrub are on the tab, and below them the open point's track: the
+track's default Dwell and Leg modulation, a station list with times, positions,
+weights, dwells and per-station overrides for both slots, a mini time bar, a
+curve toggle per leg, and stations draggable on the canvas. The clock counts
+simulation steps rather than milliseconds, so pausing the exposure pauses the
+timeline. See "The animation clock counts steps", "Stations are the track",
+"Modulators are functions of phase time" and "A modulator belongs to a phase" in
+`docs/decisions.md`.
 
 **It stays in the right-hand panel. There is no timeline strip along the bottom
 of the window.** A bottom strip is where an editor puts time when it wants to

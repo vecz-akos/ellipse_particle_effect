@@ -124,8 +124,12 @@ Rules for all of it:
   compose.** Everything else — `Panel.addStation`, the station list, the canvas
   markers — reads `Animation.at`, the plan. Copy `point.x` into a station and a
   tremor gets frozen into it. `Animation.at` returns the phase, the station
-  index and τ alongside the position; read a modulator off that rather than
-  walking the station list a second time.
+  index, τ, the phase's length and (on a leg) the unit tangent alongside the
+  position; read a modulator off that rather than walking the station list a
+  second time. **A modulator belongs to a phase**: a station has one slot per
+  entry of `SLOTS` (`dwell`, `leg`), each inheriting the track default of the
+  same name, and `Animation.modulatorFor` picks by `at.phase`. Loop over
+  `SLOTS`; do not name the slots one by one.
 - **`Animation.normalise` clamps every dwell to the gap before the next
   station**, on every edit and every preset load. Without it a dwell can outrun
   its leg and the point teleports. `Animation.at` assumes normalised input; do

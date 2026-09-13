@@ -7,26 +7,8 @@ the steps shrink to sub-pixel, so particles effectively freeze there; elsewhere
 they roam. Every hit is counted into a density buffer and tone-mapped to the
 screen, so the traces build up into orbit-like, x-ray-looking images. Drag the
 focal points around, or add new ones, to steer the shape; a panel on the right
-edits everything else live.
-
-| Component | Role |
-| --- | --- |
-| `scripts/Point.js` | `{x, y}` plus distance helpers |
-| `scripts/FocalPoint.js` | a `Point` with its own weight in the target sum |
-| `scripts/NEllipse.js` | focal points, target distance sum, per-point error |
-| `scripts/Particle.js` | a `Point` that steps according to its error |
-| `scripts/MouseFollower.js` | caches the cursor position |
-| `scripts/DensityBuffer.js` | per-pixel hit counts, and the tone map that turns them into an image |
-| `scripts/Gradient.js` | the colour ramp density is mapped through |
-| `scripts/Bloom.js` | the halo, blurred into the density before the tone map |
-| `scripts/PostProcess.js` | the vignette and the grain, over the finished pixels |
-| `scripts/Random.js` | the seeded PRNG every random step comes from |
-| `scripts/Params.js` | every tunable in one object, and the canvas sizing rule |
-| `scripts/Panel.js` | the control panel on the right |
-| `scripts/Preset.js` | the JSON save format, and the validation on load |
-| `scripts/Animation.js` | the timeline, and one track per focal point |
-| `scripts/main.js` | canvas, animation loop, keyboard controls |
-| `bench/bench.js` | what each render stage costs per frame; tooling, not part of the sketch |
+edits everything else live. Plain ES modules and Canvas 2D, no framework; how
+the pieces fit is in [docs/architecture.md](docs/architecture.md).
 
 ## Quick start
 
@@ -37,8 +19,7 @@ npm run build      # bundle into dist/, openable straight from the filesystem
 npm run bench      # what the render chain costs per frame, stage by stage
 ```
 
-Vite is the only dependency, and it is a devDependency — the sketch itself is
-plain ES modules and Canvas 2D.
+Vite is the only dependency, and it is a devDependency.
 
 ## The panel
 
@@ -52,7 +33,9 @@ scaled to fit it whole.
   its startup value with one centred focal point, keeping the seed.
 - **Look** — everything between the density buffer and the pixels: the colour
   ramp first, since that is where grading starts, then bloom, the tone map
-  (exposure, gamma, adaptation), a vignette and film grain. Bloom, vignette and
+  (exposure, gamma, and adaptation — not a look control but how fast the white
+  point follows the brightest spot while the exposure runs), a vignette and
+  film grain. Bloom, vignette and
   grain are off until you turn them on, and cost nothing while they are. None of
   it touches the simulation, so the usual way to work is to let an image build up
   first and grade it afterwards. They cost frame rate while the exposure runs —
@@ -108,6 +91,14 @@ points stopped feeding fade back over time: the tone map normalises to a white
 point that keeps rising with the densest area, so a long run behaves like an
 exposure with a slowly closing aperture.
 
+**Pausing stops the exposure, not the app.** Nothing is added to the image and
+the particles stand still, but everything else keeps working — so the way to
+finish an image is to pause it and then take your time on the Look tab. Every
+change there repaints immediately, and none of them touches what has been
+collected. While the exposure is paused a focal point set to follow the mouse
+stops following, so moving the cursor over to the panel cannot smear the picture
+you just finished.
+
 ## Moving a focal point on a timeline
 
 Dragging a point while the exposure runs is the fast way to steer the image, and
@@ -137,24 +128,18 @@ Station times snap to other points' station times, so two points can be made to
 arrive together without typing matching numbers. A point with no stations is
 untouched by any of this.
 
-A held point can also **wobble while it holds**. The **Dwell modulation** block
-above the station list sets a movement that every hold on the track adds on top
-of the plan — a vertical **sine**, an **orbit**, a smooth random **drift**, a
-per-step **tremor**, or a **pulse** of the weight (Manual weight mode only) —
-and any station can carry its own instead of the track's. A trembling point
-keeps drawing structure in one place instead of burning a dead spot. Amplitude
-is in pixels; **waves** is how many full cycles fit in the hold, so a whole
-number brings the point back to the station exactly as the hold ends, however
+A point can also **wobble on top of the plan**. The **Dwell modulation** and
+**Leg modulation** blocks above the station list set a movement that every hold,
+or every leg, on the track adds to where the plan puts the point — a **sine**,
+an **orbit**, a smooth random **drift**, a per-step **tremor**, or a **pulse**
+of the weight (Manual weight mode only) — and any station can carry its own for
+its hold or for the leg it departs on. A trembling point keeps drawing structure
+in one place instead of burning a dead spot; a sine on a leg swings across the
+leg's direction, so a curved leg weaves along its own curve. Amplitude is in
+pixels; **waves** is how many full cycles fit in the hold or the leg, so a whole
+number brings the point back onto the plan exactly as the phase ends, however
 long it is. Every wobble is computed from the step and the seed, so the same
 link gives the same film however you scrub to a step.
-
-**Pausing stops the exposure, not the app.** Nothing is added to the image and
-the particles stand still, but everything else keeps working — so the way to
-finish an image is to pause it and then take your time on the Look tab. Every
-change there repaints immediately, and none of them touches what has been
-collected. While the exposure is paused a focal point set to follow the mouse
-stops following, so moving the cursor over to the panel cannot smear the picture
-you just finished.
 
 ## Seeds
 
@@ -186,9 +171,9 @@ in six months.
 The image is a density buffer, and the **colour ramp** on the Look tab is what
 density is mapped through: position `0` is empty canvas, `1` is the densest
 pixel, and every stop in between is a colour the image passes on the way. Two
-stops give the plain white → black default; add a couple more and the
-black → orange → white grading of the reference renders is a setting rather than
-something done afterwards in an image editor.
+stops give the plain white → black default; add a couple more and a
+black → orange → white grading is a setting rather than something done
+afterwards in an image editor.
 
 The stop at `0` doubles as the image's base colour: the vignette fades the edge
 towards it rather than towards black, so it works the same way on a light look
@@ -197,6 +182,23 @@ and a dark one.
 Stops are sorted for you, so a position can be typed in any order, and a new
 stop lands in the widest gap with the colour the ramp already has there — adding
 one changes nothing until you move it.
+
+## How it was made
+
+The idea and the proof of concept are from early 2024: a few hundred lines of
+hand-written JavaScript that already did the one thing that matters — particles
+freezing along an n-ellipse. Everything since has been added with Claude Opus:
+from 2026 on, the commits are mostly the agents' work.
+
+The split is roughly this. A person decides what the project is for, which
+phase comes next, what a feature should feel like, and whether it actually
+works — by running it in the browser and looking at the pictures, which is the
+one check no agent here can make. Two agents do the rest in turn: one reads
+the code and the last change, writes up what it found and turns it into a task
+prompt; the other takes that prompt, writes the code, tests it and lands it.
+Then the first one reads the result again. The tasks, the reviews and the
+reasoning in `docs/decisions.md` come out of that loop, and so do most of the
+mistakes it caught — several of them the agents' own.
 
 ## Documentation
 

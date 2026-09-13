@@ -23,7 +23,7 @@ export default class Params {
         // and foreground colours, so it renders the same image.
         this.exposure = .9
         this.gamma = .5
-        this.adaptation = .1
+        this.adaptation = .25
         this.gradient = [
             { at: 0, color: "#ffffff" },
             { at: 1, color: "#000000" }

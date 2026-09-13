@@ -1,6 +1,6 @@
 import FocalPoint from "./FocalPoint.js"
 import Params from "./Params.js"
-import Animation, { KINDS, modulator } from "./Animation.js"
+import Animation, { KINDS, SLOTS, modulator } from "./Animation.js"
 
 const VERSION = 1
 
@@ -61,21 +61,25 @@ const animationTracks = (value, count) => {
         if (typeof track.id !== "string" || !Array.isArray(track.stations)) return null
         if (seen.has(track.id)) return null
         seen.add(track.id)
-        // The track's default: absent means none, present means valid or the
-        // whole list is refused.
-        const modulation = track.modulation && typeof track.modulation === "object" ? track.modulation : {}
-        const dwellDefault = "dwell" in modulation ? modulatorSlot(modulation.dwell) : modulator()
-        if (!dwellDefault) return null
+        // The track's defaults, one per slot: absent means none, present means
+        // valid or the whole list is refused.
+        const defaults = track.modulation && typeof track.modulation === "object" ? track.modulation : {}
+        const modulation = {}
+        for (const slot of SLOTS) {
+            modulation[slot] = slot in defaults ? modulatorSlot(defaults[slot]) : modulator()
+            if (!modulation[slot]) return null
+        }
         const stations = []
         for (const station of track.stations) {
             if (!station || typeof station !== "object") return null
             const numbers = ["time", "x", "y", "weight", "dwell", "cx", "cy"]
             if (numbers.some(key => !Number.isFinite(station[key]))) return null
-            // A station's own slot is optional; when it is there it has to hold.
-            let own = null
-            if (station.modulation && typeof station.modulation === "object" && station.modulation.dwell) {
-                own = modulatorSlot(station.modulation.dwell)
-                if (!own) return null
+            // A station's own slots are optional; one that is there has to hold.
+            const own = {}
+            const given = station.modulation && typeof station.modulation === "object" ? station.modulation : {}
+            for (const slot of SLOTS) {
+                own[slot] = given[slot] ? modulatorSlot(given[slot]) : null
+                if (given[slot] && !own[slot]) return null
             }
             stations.push({
                 time: Math.max(0, Math.round(station.time)),
@@ -83,10 +87,10 @@ const animationTracks = (value, count) => {
                 dwell: Math.max(0, station.dwell),
                 curve: station.curve === true,
                 cx: station.cx, cy: station.cy,
-                modulation: { dwell: own }
+                modulation: own
             })
         }
-        tracks.push(Animation.normalise({ id: track.id, stations, modulation: { dwell: dwellDefault } }))
+        tracks.push(Animation.normalise({ id: track.id, stations, modulation }))
     }
     return tracks
 }
@@ -121,18 +125,23 @@ export default class Preset {
         // — a link should not carry one empty track per focal point.
         if (animation && animation.animated) {
             const slot = (m) => ({ ...m, amplitude: round(m.amplitude) })
+            // Only an override travels; an inheriting station carries nothing
+            // for that slot and comes back inheriting.
+            const overrides = (modulation) => {
+                const own = {}
+                for (const name of SLOTS) if (modulation[name]) own[name] = slot(modulation[name])
+                return Object.keys(own).length > 0 ? { modulation: own } : {}
+            }
             document.tracks = animation.tracks.map(({ id, stations, modulation }) => ({
                 id,
-                modulation: { dwell: slot(modulation.dwell) },
+                modulation: Object.fromEntries(SLOTS.map(name => [name, slot(modulation[name])])),
                 stations: stations.map((at) => ({
                     time: Math.round(at.time),
                     x: round(at.x), y: round(at.y), weight: at.weight,
                     dwell: Math.round(at.dwell),
                     curve: at.curve,
                     cx: round(at.cx), cy: round(at.cy),
-                    // Only an override travels; an inheriting station carries
-                    // nothing and comes back inheriting.
-                    ...(at.modulation.dwell ? { modulation: { dwell: slot(at.modulation.dwell) } } : {})
+                    ...overrides(at.modulation)
                 }))
             }))
         }

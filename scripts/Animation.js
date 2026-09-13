@@ -23,17 +23,21 @@ import Random from "./Random.js"
 //
 // The identity is what seeds a modulator's noise, so two tracks do not tremble
 // in lockstep. `modulation` holds the track's defaults, one per phase kind, that
-// its stations inherit — the `leg` slot arrives with T26.
-const track = (id) => ({ id, stations: [], modulation: { dwell: modulator() } })
+// its stations inherit.
+export const SLOTS = ["dwell", "leg"]
+const track = (id) => ({ id, stations: [], modulation: { dwell: modulator(), leg: modulator() } })
 
 // `curve` bends the leg to the next station through the single control point
 // (cx, cy) — a quadratic Bézier, so one handle to drag rather than two. `dwell`
 // is time held *at* this station, and it eats into the leg that follows.
-// `modulation.dwell` is this station's own modulator for that hold, or null to
-// take the track's.
+// `modulation.dwell` is this station's own modulator for that hold and
+// `modulation.leg` for the leg it departs on, each null to take the track's.
 export const station = ({ time=0, x=0, y=0, weight=0, dwell=0, curve=false, cx=0, cy=0, modulation=null }) =>
     ({ time, x, y, weight, dwell, curve, cx, cy,
-        modulation: { dwell: modulation && modulation.dwell ? modulator(modulation.dwell) : null } })
+        modulation: {
+            dwell: modulation && modulation.dwell ? modulator(modulation.dwell) : null,
+            leg: modulation && modulation.leg ? modulator(modulation.leg) : null
+        } })
 
 // ---- modulators ---------------------------------------------------------
 //
@@ -90,15 +94,19 @@ const drift = (m, tau, seed) => {
 // The offset a modulator adds at τ into a phase `length` steps long. `seed`
 // already carries the run, the track, the station and the slot, so two tracks
 // with the same settings differ. A phase with no length has no time to
-// modulate in, so it gets no offset rather than a division by zero.
+// modulate in, so it gets no offset rather than a division by zero. `normal`
+// is the direction the sine swings in: screen-vertical on a dwell, which has
+// no direction of its own, and the leg's normal on a leg, so a curved leg
+// weaves along its own curve rather than fighting it.
 const NONE = { x: 0, y: 0, weight: 0 }
-export const modulate = (m, tau, length, seed) => {
+const VERTICAL = { x: 0, y: 1 }
+export const modulate = (m, tau, length, seed, normal=VERTICAL) => {
     if (!m || m.kind === "none" || m.amplitude === 0 || !(length > 0)) return NONE
     switch (m.kind) {
-        // Screen-vertical on a dwell, which has no direction of its own; T26
-        // turns it perpendicular to the leg.
-        case "sine":
-            return { x: 0, y: m.amplitude*Math.sin(angle(m.waves, tau, length)), weight: 0 }
+        case "sine": {
+            const swing = m.amplitude*Math.sin(angle(m.waves, tau, length))
+            return { x: swing*normal.x, y: swing*normal.y, weight: 0 }
+        }
         // The station is a point *on* the circle, not its centre: τ = 0 is the
         // station, integer waves bring the point back to it, and nothing jumps
         // at either end of the hold. A circle around the station would put the
@@ -137,16 +145,36 @@ const bezier = (from, control, to, t) => {
 const sample = (at, index, tau, length) =>
     ({ x: at.x, y: at.y, weight: at.weight, phase: "dwell", station: index, tau, length })
 
+// The leg's direction at `t`, unit length: the derivative of the quadratic
+// Bézier, 2(1−t)(C−P₀) + 2t(P₂−C), or the chord when the leg is straight. A
+// leg between two coincident stations has no direction; it takes the screen's
+// x axis so the sine's normal falls back to vertical, the dwell's answer.
+const heading = (from, to, t) => {
+    let x, y
+    if (from.curve) {
+        const u = 1 - t
+        x = 2*u*(from.cx - from.x) + 2*t*(to.x - from.cx)
+        y = 2*u*(from.cy - from.y) + 2*t*(to.y - from.cy)
+    } else {
+        x = to.x - from.x
+        y = to.y - from.y
+    }
+    const size = Math.hypot(x, y)
+    return size > 0 ? { x: x/size, y: y/size } : { x: 1, y: 0 }
+}
+
 // Where the point is partway along the leg out of `from`. The control point
 // belongs to the station the leg leaves, so a curve is a property of the leg
 // rather than of either endpoint — and so is the leg's modulator, which is why
-// the leg is reported under the departing station's index.
+// the leg is reported under the departing station's index. `tangent` is the
+// leg's direction here, for a modulator that wants to know which way is along.
 const travel = (from, to, t, index, tau, length) => ({
     ...(from.curve
         ? { x: bezier(from.x, from.cx, to.x, t), y: bezier(from.y, from.cy, to.y, t) }
         : { x: lerp(from.x, to.x, t), y: lerp(from.y, to.y, t) }),
     weight: lerp(from.weight, to.weight, t),
-    phase: "leg", station: index, tau, length
+    phase: "leg", station: index, tau, length,
+    tangent: heading(from, to, t)
 })
 
 export default class Animation {
@@ -329,24 +357,26 @@ export default class Animation {
         return sample(stations[last], last, time - stations[last].time, span - stations[last].time)
     }
 
-    // The modulator in charge of the phase `at` reports: the station's own if it
-    // has one, else the track's default. Legs have no slot until T26, so a leg
-    // reads as unmodulated.
+    // The modulator in charge of the phase `at` reports: the station's own slot
+    // for that phase if it has one, else the track's default. A dwell and the
+    // leg leaving the same station are two phases with two slots — a held point
+    // wants to tremble in place, a moving one wants its trajectory shaped.
     static modulatorFor(track, at) {
-        if (at.phase !== "dwell") return null
         const own = track.stations[at.station]
-        const slot = own && own.modulation && own.modulation.dwell
-        return slot || track.modulation.dwell
+        const slot = own && own.modulation && own.modulation[at.phase]
+        return slot || track.modulation[at.phase] || null
     }
 
     // The offset the plan gets at `at`, with the noise seeded from the run, the
     // track's identity, the station and the slot — never from the simulation's
     // Random, whose stream has to be consumed in a fixed order for a seed to
-    // reproduce an image. Same settings on two tracks, different noise.
+    // reproduce an image. Same settings on two tracks, different noise. On a leg
+    // the sine swings across the leg's normal, the tangent turned a quarter.
     static modulate(track, at, seed) {
         const m = Animation.modulatorFor(track, at)
         if (!m) return NONE
-        return modulate(m, at.tau, at.length, `${seed}/${track.id}/${at.station}/${at.phase}`)
+        const normal = at.tangent ? { x: -at.tangent.y, y: at.tangent.x } : VERTICAL
+        return modulate(m, at.tau, at.length, `${seed}/${track.id}/${at.station}/${at.phase}`, normal)
     }
 
     // A deliberate canvas change takes the whole figure with it, and a track's
@@ -365,9 +395,11 @@ export default class Animation {
             at.cx *= scaleX
             at.cy *= scaleY
             at.weight = Math.round(at.weight*scaleWeight)
-            if (at.modulation.dwell) at.modulation.dwell.amplitude *= scaleWeight
+            for (const slot of SLOTS) {
+                if (at.modulation[slot]) at.modulation[slot].amplitude *= scaleWeight
+            }
         }
-        track.modulation.dwell.amplitude *= scaleWeight
+        for (const slot of SLOTS) track.modulation[slot].amplitude *= scaleWeight
         return track
     }
 

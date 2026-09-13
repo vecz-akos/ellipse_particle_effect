@@ -1505,3 +1505,66 @@ matters, the `docs/decisions.md` entry says so.
 - Choosing a kind on a fresh slot moves the point visibly without touching a
   number.
 - Seeking still gives the same position as playing to it.
+
+---
+
+## T26 — Modulators on a leg
+
+- **Kind:** feature
+- **Roadmap:** Phase 5.3
+- **Touches:** `scripts/Animation.js`, `scripts/Panel.js`, `scripts/Preset.js`
+- **Status:** done — see "A modulator belongs to a phase, so a leg has its own slot" in `docs/decisions.md`
+- **Blocked by:** T25 and T25b, both landed — the units are waves per phase, and
+  `at` already carries the leg's `length`
+
+**Prompt**
+
+> T25 built the modulators and put them on dwells. This task puts the same
+> modulators on **legs**, so a modulator belongs to a phase in full — a dwell
+> and the leg leaving the same station each carry their own, because they want
+> different numbers: a held point wants to tremble in place, a moving point
+> wants its *trajectory* shaped.
+>
+> Two kinds change meaning on a leg and the rest do not:
+>
+> - **sine** turns **perpendicular to the leg** — offset along the leg's normal
+>   at the current point, so a curved leg weaves along its own curve. Offsetting
+>   along the screen's y axis instead is easier to write and fights the leg's
+>   direction; T25's vertical bob was the dwell's answer, not the general one.
+> - **orbit** rides along the leg: the circle's centre is where the plan says the
+>   point is, and moves with it.
+>
+> Drift, tremor and weight pulse are unchanged: an offset is an offset whether
+> the centre is standing or moving.
+>
+> **τ restarts at the phase boundary.** A modulator on the leg starts from zero
+> when the leg starts, not from wherever the dwell's modulator left off. The two
+> are different phases with different settings and there is nothing to be
+> continuous with. That means the *position* can step at the boundary by up to
+> the two amplitudes combined — a tremor does not vanish at τ = 0 and a sine
+> with a phase offset does not either. That step is inherent to independent
+> phases and small at sensible amplitudes; if it shows, ramp each modulator's
+> amplitude over a few steps at both ends of its phase, and say so. A jump
+> *larger* than the amplitudes is a different thing: a bug in the phase
+> information `at` returns, not in the modulators.
+>
+> **The leg's direction comes from `at`.** T25 was told to leave room for it on
+> the return value; if it is not there, add it — the tangent of the leg at the
+> current parameter, which for a quadratic Bézier is one line.
+>
+> **Storage and UI** follow T25 exactly: a **leg slot** beside the dwell slot on
+> the station, inheriting the track default, validated in `Preset.js`, and shown
+> under the station's leg row where T25 left the space.
+>
+> **Not in this task:** export, and the step-curve constants.
+
+**Done when**
+
+- Each kind runs during a leg, composes with the interpolated position, and
+  vanishes at amplitude zero.
+- The sine offsets perpendicular to the leg's tangent, on straight and curved
+  legs both.
+- A dwell and the leg leaving it can carry different settings, and the position
+  is continuous at the station.
+- Seeking to any step on a leg gives the same position as playing to it.
+- A preset round-trips both slots.

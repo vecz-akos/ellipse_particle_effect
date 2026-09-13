@@ -169,14 +169,16 @@ which is the normal state and means the point stands where it was left.
 assumes it has run. It touches no DOM and has no notion of which stations are in
 the past — that lock belongs to `Panel`.
 
-`at` also reports the **phase** — dwell or leg, the station it belongs to, and τ,
-time since it began — and that is what a **modulator** reads. The module exports
-`KINDS`, `modulator` and `modulate`: a modulator is a flat record (kind and
-numbers) and `modulate(m, τ, seed)` is a pure function returning an offset in
-x, y and weight. `Animation.modulate(track, at, seed)` picks the slot in charge —
-the station's own `modulation.dwell` or the track's default — and seeds the
-noise from the run seed, the track id, the station and the slot. Nothing holds
-state between steps, so seeking equals playing.
+`at` also reports the **phase** — dwell or leg, the station it belongs to, τ,
+time since it began, its `length`, and on a leg the unit `tangent` — and that
+is what a **modulator** reads. The module exports `KINDS`, `SLOTS`, `modulator`
+and `modulate`: a modulator is a flat record (kind and numbers) and
+`modulate(m, τ, length, seed, normal)` is a pure function returning an offset
+in x, y and weight. `Animation.modulate(track, at, seed)` picks the slot in
+charge — the station's own `modulation[phase]` or the track's default of the
+same name — turns the tangent into the sine's normal, and seeds the noise from
+the run seed, the track id, the station and the slot. Nothing holds state
+between steps, so seeking equals playing.
 
 ### `scripts/main.js`
 

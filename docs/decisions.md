@@ -26,6 +26,49 @@ Paragraphs, tables, lists.
 
 ---
 
+# A modulator belongs to a phase, so a leg has its own slot
+
+Date: 2026-09-13
+
+T26. The modulators T25 built now run on legs as well as dwells, and the
+roadmap's structural call — a modulator belongs to a *phase*, not to a track —
+is what the data does: a station carries `modulation.dwell` for its hold and
+`modulation.leg` for the leg it departs on, each `null` to inherit the track's
+default of the same name, and `Animation.modulatorFor` picks the slot by the
+phase `at` reports. `SLOTS` is the list, so `rescale`, the preset and the panel
+loop over it rather than naming each. A one-shot's last station has no leg and
+the panel offers it no leg slot.
+
+**Two kinds change meaning on a leg; three do not.** The sine swings across the
+**leg's normal** — `at` now carries the leg's unit `tangent`, the chord for a
+straight leg and the quadratic Bézier's derivative for a curved one, and
+`modulate` takes a `normal` that is that tangent turned a quarter. On a dwell
+the normal is screen-vertical, the T25 answer, since a dwell has no direction.
+A curved leg therefore weaves along its own curve; the harness checks the
+offset is perpendicular to the local tangent at every step. The orbit rides
+along the leg with nothing changed: its circle is drawn relative to wherever
+the plan says the point is, and after T25b the plan point is *on* the circle —
+so the orbit starts on the station, leaves with the leg and arrives on the next
+station, which is what makes the position continuous at the boundary for free.
+Drift, tremor and pulse are offsets and do not care whether the centre stands
+or moves.
+
+**τ restarts at the boundary and the position does not jump — for the
+periodic kinds.** A leg's τ counts from the end of the dwell, its `length` is
+the time to the next station, and integer waves on both phases mean the dwell
+ends on the station, the leg starts on it and the next dwell starts on it
+again. The harness checks all three. A tremor or a drift does step at the
+boundary by up to the two amplitudes combined; that is inherent to two
+independent phases and small at sensible amplitudes, and no ramp was added — it
+was not visible in use. A leg between two coincident stations has no direction
+and takes the x axis, so the sine falls back to vertical there.
+
+**The panel** adds a Leg modulation form under the Dwell one in the track's
+block, and an "own leg modulation" checkbox under each station's leg row, the
+dwell's under its hold — one `stationSlot` helper builds both.
+
+---
+
 # Waves per dwell
 
 Date: 2026-09-13

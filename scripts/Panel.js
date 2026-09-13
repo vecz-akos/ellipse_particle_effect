@@ -370,13 +370,13 @@ export default class Panel {
         this.slider(tone, "Exposure", {
             read: () => params.exposure,
             write: (v) => params.exposure = v,
-            min: .05, max: 4, step: .05,
+            min: .05, max: 2, step: .05,
             format: fixed(2)
         })
         this.slider(tone, "Gamma", {
             read: () => params.gamma,
             write: (v) => params.gamma = v,
-            min: .1, max: 4, step: .05,
+            min: .1, max: 2, step: .05,
             format: fixed(2)
         })
         this.slider(tone, "Adaptation", {
@@ -385,6 +385,7 @@ export default class Panel {
             min: .01, max: 1, step: .01,
             format: fixed(2)
         })
+        tone.appendChild(el("p", "hint", "Adaptation only matters while the exposure runs: lower, and a fresh bright area burns out for longer before the picture darkens around it."))
         tone.appendChild(el("p", "hint", "The look is applied to whatever the image already holds — grade it with the exposure paused."))
 
         const vignette = this.section(body, "Vignette")
@@ -881,20 +882,53 @@ export default class Panel {
         return entry
     }
 
+    // The track's defaults, one form per slot. A default reaches every phase
+    // of its kind on the track, so it is a track edit: allowed whenever the
+    // timeline is stopped.
     syncModulation() {
         const track = this.openTrack
         this.modulationBlock.textContent = ""
         this.modulationBlock.hidden = !track
         if (!track) return
+        const locked = () => this.animation.playing
         this.modulationBlock.appendChild(el("p", "readout", "Dwell modulation"))
         this.modulatorForm(this.modulationBlock, () => track.modulation.dwell, {
-            // A default reaches every dwell on the track, so it is a track
-            // edit: allowed whenever the timeline is stopped.
-            locked: () => this.animation.playing,
-            onEdit: () => this.editedStation()
+            locked, onEdit: () => this.editedStation()
         })
         this.modulationBlock.appendChild(el("p", "hint",
-            "Added on top of the plan while the point holds at a station; every station takes this unless it has its own. Amplitude is in pixels; waves is how many full cycles fit in the hold, so a whole number ends where it started."))
+            "Added on top of the plan while the point holds at a station. Amplitude is in pixels; waves is how many full cycles fit in the hold, so a whole number ends where it started."))
+        this.modulationBlock.appendChild(el("p", "readout", "Leg modulation"))
+        this.modulatorForm(this.modulationBlock, () => track.modulation.leg, {
+            locked, onEdit: () => this.editedStation()
+        })
+        this.modulationBlock.appendChild(el("p", "hint",
+            "The same, while the point travels to the next station: the sine swings across the leg, the orbit rides along it. Every station takes these unless it has its own."))
+    }
+
+    // A station's own slot, collapsed behind a checkbox: ticking it copies the
+    // track's default to start from, unticking goes back to inheriting.
+    stationSlot(row, track, station, slot, label) {
+        const own = el("div", "station-modulation")
+        const override = el("input")
+        override.type = "checkbox"
+        override.checked = Boolean(station.modulation[slot])
+        override.addEventListener("change", () => {
+            station.modulation[slot] = override.checked ? modulator(track.modulation[slot]) : null
+            this.editedStation(station)
+            this.syncTracks()
+        })
+        const overrideLabel = el("label", "station-curve")
+        overrideLabel.appendChild(override)
+        overrideLabel.appendChild(el("span", null, label))
+        own.appendChild(overrideLabel)
+        if (station.modulation[slot]) {
+            this.modulatorForm(own, () => station.modulation[slot], {
+                locked: () => this.stationLocked(station),
+                onEdit: () => this.editedStation(station)
+            })
+        }
+        row.appendChild(own)
+        return override
     }
 
     syncStations() {
@@ -948,31 +982,9 @@ export default class Panel {
             row.appendChild(where)
             row.appendChild(howLong)
 
-            // The station's own dwell modulator, collapsed behind a checkbox:
-            // ticking it copies the track's default to start from, unticking
-            // goes back to inheriting. The leg's slot (T26) goes under the leg
-            // row below, not here.
-            const own = el("div", "station-modulation")
-            const override = el("input")
-            override.type = "checkbox"
-            override.checked = Boolean(station.modulation.dwell)
-            override.addEventListener("change", () => {
-                station.modulation.dwell = override.checked ? modulator(track.modulation.dwell) : null
-                this.editedStation(station)
-                this.syncTracks()
-            })
-            const overrideLabel = el("label", "station-curve")
-            overrideLabel.appendChild(override)
-            overrideLabel.appendChild(el("span", null, "own dwell modulation"))
-            own.appendChild(overrideLabel)
-            if (station.modulation.dwell) {
-                this.modulatorForm(own, () => station.modulation.dwell, {
-                    locked: () => this.stationLocked(station),
-                    onEdit: () => this.editedStation(station)
-                })
-            }
-            row.appendChild(own)
-            inputs.override = override
+            // The station's own dwell modulator sits under the hold; the leg's
+            // under the leg row below, since the leg is what leaves here.
+            inputs.override = this.stationSlot(row, track, station, "dwell", "own dwell modulation")
 
             const next = track.stations[index + 1]
             const isLast = !next
@@ -996,6 +1008,10 @@ export default class Panel {
                     : `↓ ${legSteps} steps${isLast ? " back to the first" : ""}`)
             leg.appendChild(legLength)
             row.appendChild(leg)
+            // A one-shot's last station has no leg to modulate.
+            if (!(isLast && !this.params.animation.loop)) {
+                inputs.legOverride = this.stationSlot(row, track, station, "leg", "own leg modulation")
+            }
 
             this.stationList.appendChild(row)
             this.stationRows.push({ row, inputs, curve, station, legLength })
