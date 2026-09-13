@@ -1,6 +1,15 @@
 import Params from "./Params.js"
 import Gradient from "./Gradient.js"
-import Animation from "./Animation.js"
+import Animation, { KINDS, modulator } from "./Animation.js"
+
+// The modulator fields, as the panel labels them. Waves are full cycles per
+// hold, amplitudes pixels, drift's speed per step — see KINDS in Animation.js.
+const MODULATOR_FIELDS = {
+    amplitude: { label: "amp", step: 1, min: 0 },
+    waves: { label: "waves", step: .5, min: 0 },
+    waves2: { label: "waves y", step: .5, min: 0 },
+    speed: { label: "speed", step: .1, min: 0 }
+}
 
 const el = (tag, className, text) => {
     const node = document.createElement(tag)
@@ -616,6 +625,11 @@ export default class Panel {
         this.miniBar.addEventListener("mousedown", (event) => this.seekFromMiniBar(event))
         section.appendChild(this.miniBar)
 
+        // The track's default modulation, which its stations inherit. One slot
+        // today; T26 adds the leg's beside it.
+        this.modulationBlock = el("div", "modulation")
+        section.appendChild(this.modulationBlock)
+
         this.stationList = el("div", "station-list")
         section.appendChild(this.stationList)
 
@@ -692,11 +706,17 @@ export default class Panel {
             this.setPlaybackStatus(`There is already a station at step ${time}.`, true)
             return
         }
+        // The plan's position, not the point's: with a tremor running the point
+        // is off-plan by a random offset, and copying it would freeze one
+        // shaking instant into a station. Only a track with no stations yet
+        // has nothing but the point to read.
+        const { duration, loop } = this.params.animation
+        const at = Animation.at(track, time, duration, loop) || point
         this.animation.addStation(track, {
-            time, x: point.x, y: point.y, weight: point.weight,
+            time, x: at.x, y: at.y, weight: at.weight,
             // A control point on the station itself makes the curve start out
             // straight, so turning `curve` on changes nothing until it is dragged.
-            cx: point.x, cy: point.y
+            cx: at.x, cy: at.y
         })
         this.setPlaybackStatus(`Station added at step ${time}.`)
         this.touched()
@@ -804,11 +824,86 @@ export default class Panel {
         })
     }
 
+    // One form per slot, wherever the slot sits — the track's default or a
+    // station's own. The fields differ per kind, so a kind change rebuilds the
+    // fields; the numbers are edited live, like a station's x.
+    modulatorForm(container, get, { locked, onEdit }) {
+        const form = el("div", "modulator")
+        const select = el("select")
+        const options = {}
+        for (const kind of Object.keys(KINDS)) {
+            const option = el("option", null, kind)
+            option.value = kind
+            select.appendChild(option)
+            options[kind] = option
+        }
+        const fields = el("div", "station-fields modulator-fields")
+        const entry = { select, fields, inputs: [], get, locked, pulseOption: options.pulse }
+
+        const render = () => {
+            const m = get()
+            select.value = m.kind
+            fields.textContent = ""
+            entry.inputs = []
+            for (const key of KINDS[m.kind]) {
+                const spec = MODULATOR_FIELDS[key]
+                const field = el("label", "station-field")
+                field.appendChild(el("span", null, spec.label))
+                const input = el("input")
+                input.type = "number"
+                input.step = spec.step
+                if (spec.min !== undefined) input.min = spec.min
+                input.value = m[key]
+                input.addEventListener("input", () => {
+                    const value = Number(input.value)
+                    if (Number.isNaN(value)) return
+                    get()[key] = spec.min !== undefined ? Math.max(spec.min, value) : value
+                    onEdit()
+                })
+                field.appendChild(input)
+                fields.appendChild(field)
+                entry.inputs.push(input)
+            }
+            fields.hidden = KINDS[m.kind].length === 0
+        }
+        select.addEventListener("change", () => {
+            get().kind = select.value
+            render()
+            onEdit()
+            this.syncStationLocks(true)
+        })
+        render()
+
+        form.appendChild(select)
+        form.appendChild(fields)
+        container.appendChild(form)
+        this.modulatorForms.push(entry)
+        return entry
+    }
+
+    syncModulation() {
+        const track = this.openTrack
+        this.modulationBlock.textContent = ""
+        this.modulationBlock.hidden = !track
+        if (!track) return
+        this.modulationBlock.appendChild(el("p", "readout", "Dwell modulation"))
+        this.modulatorForm(this.modulationBlock, () => track.modulation.dwell, {
+            // A default reaches every dwell on the track, so it is a track
+            // edit: allowed whenever the timeline is stopped.
+            locked: () => this.animation.playing,
+            onEdit: () => this.editedStation()
+        })
+        this.modulationBlock.appendChild(el("p", "hint",
+            "Added on top of the plan while the point holds at a station; every station takes this unless it has its own. Amplitude is in pixels; waves is how many full cycles fit in the hold, so a whole number ends where it started."))
+    }
+
     syncStations() {
         const track = this.openTrack
         this.stationList.textContent = ""
         this.stationRows = []
+        this.modulatorForms = []
         this.addStationButton.disabled = !track
+        this.syncModulation()
 
         if (!track) {
             this.stationList.appendChild(el("p", "hint",
@@ -853,6 +948,32 @@ export default class Panel {
             row.appendChild(where)
             row.appendChild(howLong)
 
+            // The station's own dwell modulator, collapsed behind a checkbox:
+            // ticking it copies the track's default to start from, unticking
+            // goes back to inheriting. The leg's slot (T26) goes under the leg
+            // row below, not here.
+            const own = el("div", "station-modulation")
+            const override = el("input")
+            override.type = "checkbox"
+            override.checked = Boolean(station.modulation.dwell)
+            override.addEventListener("change", () => {
+                station.modulation.dwell = override.checked ? modulator(track.modulation.dwell) : null
+                this.editedStation(station)
+                this.syncTracks()
+            })
+            const overrideLabel = el("label", "station-curve")
+            overrideLabel.appendChild(override)
+            overrideLabel.appendChild(el("span", null, "own dwell modulation"))
+            own.appendChild(overrideLabel)
+            if (station.modulation.dwell) {
+                this.modulatorForm(own, () => station.modulation.dwell, {
+                    locked: () => this.stationLocked(station),
+                    onEdit: () => this.editedStation(station)
+                })
+            }
+            row.appendChild(own)
+            inputs.override = override
+
             const next = track.stations[index + 1]
             const isLast = !next
             const arrives = next ? next.time : span
@@ -891,7 +1012,7 @@ export default class Panel {
     syncStationLocks(force=false) {
         if (!this.stationRows) return
         const shared = !this.params.manualWeight
-        const signature = (shared ? "s" : "m")
+        const signature = (shared ? "s" : "m") + (this.animation.playing ? "p" : "-")
             + this.stationRows.map(({ station }) => this.stationLocked(station) ? "1" : "0").join("")
         if (!force && signature === this.shownLocks) return
         this.shownLocks = signature
@@ -903,6 +1024,18 @@ export default class Panel {
             inputs.weight.disabled = locked || shared
             curve.disabled = locked
         })
+
+        // The modulator forms lock with whatever they hang off — the track or a
+        // station. A weight pulse is a weight, so its numbers lock with the
+        // station weights while the shared slider is in charge; the kind can
+        // still be changed away from it.
+        for (const form of this.modulatorForms || []) {
+            const locked = form.locked()
+            form.select.disabled = locked
+            form.pulseOption.disabled = shared
+            const pulse = shared && form.get().kind === "pulse"
+            for (const input of form.inputs) input.disabled = locked || pulse
+        }
     }
 
     // Sequence without proportion is what a list cannot show: dwells as blocks,

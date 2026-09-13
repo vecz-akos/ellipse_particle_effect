@@ -223,6 +223,10 @@ const update = () => {
 // Where the timeline says each point is, written before the particles move so a
 // frame's particles see that frame's figure. A track with no stations returns
 // null and its point is left exactly where the by-hand workflow put it.
+//
+// This is the one place the plan and its modulation compose into a position.
+// Everything else — the station list, the canvas markers, addStation — reads
+// the plan, so a tremor never gets frozen into a station.
 const applyTracks = () => {
     if (!animation.animated) return
     const { duration, loop } = params.animation
@@ -231,10 +235,15 @@ const applyTracks = () => {
         if (!point) return
         const at = Animation.at(track, animation.time, duration, loop)
         if (!at) return
-        point.x = at.x
-        point.y = at.y
+        const wobble = Animation.modulate(track, at, random.seed)
+        point.x = at.x + wobble.x
+        point.y = at.y + wobble.y
+        // The pulse is a weight that differs from step to step, which is what
+        // Manual mode means; with the shared weight in charge it stays locked
+        // in the panel and silent here, like the station weights it rides on.
+        const weight = params.manualWeight ? at.weight + wobble.weight : at.weight
         // Through setWeight, so d is recalculated the one existing way.
-        if (point.weight !== at.weight) nEllipse.setWeight(index, at.weight)
+        if (point.weight !== weight) nEllipse.setWeight(index, weight)
     })
 }
 
@@ -375,7 +384,9 @@ const drawTrack = (gradient) => {
         }
     }
 
-    // Where the point is right now, which is not always a station.
+    // Where the plan puts the point right now, which is not always a station.
+    // The plan, not the wobble: the cross above already shows where the point
+    // actually is, so the two together make the modulation visible.
     const at = Animation.at(track, animation.time, duration, loop)
     if (at) {
         ctx.beginPath()

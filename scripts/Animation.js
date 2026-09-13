@@ -11,6 +11,7 @@
 // the tracks. Preset walks Params, so anything kept off Params cannot be saved
 // by any future code path — see "Run state stays off Params" in
 // docs/decisions.md.
+import Random from "./Random.js"
 
 // The vocabulary is fixed and worth using exactly — see "The words this phase
 // uses" in docs/roadmap.md. A **track** is one focal point's whole plan: an
@@ -20,15 +21,103 @@
 // modelling it as one lets the list hold a leg with one endpoint, a gap, or an
 // ambiguous order, and every one of those becomes a validation branch.
 //
-// The identity is what seeds a modulator's own Random in T25, so two tracks do
-// not tremble in lockstep.
-const track = (id) => ({ id, stations: [] })
+// The identity is what seeds a modulator's noise, so two tracks do not tremble
+// in lockstep. `modulation` holds the track's defaults, one per phase kind, that
+// its stations inherit — the `leg` slot arrives with T26.
+const track = (id) => ({ id, stations: [], modulation: { dwell: modulator() } })
 
 // `curve` bends the leg to the next station through the single control point
 // (cx, cy) — a quadratic Bézier, so one handle to drag rather than two. `dwell`
 // is time held *at* this station, and it eats into the leg that follows.
-export const station = ({ time=0, x=0, y=0, weight=0, dwell=0, curve=false, cx=0, cy=0 }) =>
-    ({ time, x, y, weight, dwell, curve, cx, cy })
+// `modulation.dwell` is this station's own modulator for that hold, or null to
+// take the track's.
+export const station = ({ time=0, x=0, y=0, weight=0, dwell=0, curve=false, cx=0, cy=0, modulation=null }) =>
+    ({ time, x, y, weight, dwell, curve, cx, cy,
+        modulation: { dwell: modulation && modulation.dwell ? modulator(modulation.dwell) : null } })
+
+// ---- modulators ---------------------------------------------------------
+//
+// A modulator is an offset added on top of what the plan says, never a
+// replacement — at amplitude zero exactly the stations remain. Every kind is a
+// **pure function of (τ, seed, parameters)**, τ being time since the phase
+// began: nothing here holds state between steps, so seeking to step 300 gives
+// the same answer as playing to it. A drift written as a random walk could not
+// do that — see "Modulators are functions of phase time" in docs/decisions.md.
+//
+// The periodic kinds count **waves per phase**: `waves` full cycles fit in the
+// dwell the modulator runs on, however long it is, so at an integer count the
+// point ends the hold exactly where it began it. A per-step frequency could not
+// promise that, and the starting angle it needed was only ever right at zero —
+// see "Waves per dwell" in docs/decisions.md. Amplitude is pixels (weight
+// pixels for the pulse); drift's `speed` is per step, since it returns nowhere.
+// The parameters each kind reads:
+export const KINDS = {
+    none: [],
+    sine: ["amplitude", "waves"],
+    orbit: ["amplitude", "waves", "waves2"],
+    drift: ["amplitude", "speed"],
+    tremor: ["amplitude"],
+    pulse: ["amplitude", "waves"]
+}
+
+// One flat shape for every kind, so a slot can change kind without losing the
+// numbers it had, and a preset validates one set of fields. The numbers default
+// to something visible: a kind chosen on a fresh slot should move the point
+// before anyone touches a field. `none` is the off state.
+export const modulator = ({ kind="none", amplitude=15, waves=1, waves2=1, speed=1 }={}) =>
+    ({ kind: kind in KINDS ? kind : "none", amplitude, waves, waves2, speed })
+
+const TAU = Math.PI*2
+const angle = (waves, tau, length) => TAU*waves*tau/length
+
+// A hash of (seed, τ) mapped to -1…1: the shake is different every step and the
+// same on every replay.
+const unit = (seed, tau, axis) => Random.hash(`${seed}:${tau}:${axis}`)/4294967296*2 - 1
+
+// Drift is a sum of three sines per axis with seeded frequencies and phases: it
+// wanders without repeating within any run of sensible length, and it is a
+// function, not a walk. The frequencies spread around `speed`.
+const drift = (m, tau, seed) => {
+    const own = new Random(seed)
+    let x = 0, y = 0
+    for (let k = 0; k < 3; k++) {
+        x += Math.sin(TAU*m.speed*(.5 + own.next())/100*tau + own.angle())
+        y += Math.sin(TAU*m.speed*(.5 + own.next())/100*tau + own.angle())
+    }
+    return { x: m.amplitude*x/3, y: m.amplitude*y/3, weight: 0 }
+}
+
+// The offset a modulator adds at τ into a phase `length` steps long. `seed`
+// already carries the run, the track, the station and the slot, so two tracks
+// with the same settings differ. A phase with no length has no time to
+// modulate in, so it gets no offset rather than a division by zero.
+const NONE = { x: 0, y: 0, weight: 0 }
+export const modulate = (m, tau, length, seed) => {
+    if (!m || m.kind === "none" || m.amplitude === 0 || !(length > 0)) return NONE
+    switch (m.kind) {
+        // Screen-vertical on a dwell, which has no direction of its own; T26
+        // turns it perpendicular to the leg.
+        case "sine":
+            return { x: 0, y: m.amplitude*Math.sin(angle(m.waves, tau, length)), weight: 0 }
+        // The station is a point *on* the circle, not its centre: τ = 0 is the
+        // station, integer waves bring the point back to it, and nothing jumps
+        // at either end of the hold. A circle around the station would put the
+        // point a full amplitude away in the first step.
+        case "orbit":
+            return {
+                x: m.amplitude*Math.sin(angle(m.waves, tau, length)),
+                y: m.amplitude*(Math.cos(angle(m.waves2, tau, length)) - 1),
+                weight: 0
+            }
+        case "drift":
+            return drift(m, tau, seed)
+        case "tremor":
+            return { x: m.amplitude*unit(seed, tau, "x"), y: m.amplitude*unit(seed, tau, "y"), weight: 0 }
+        case "pulse":
+            return { x: 0, y: 0, weight: m.amplitude*Math.sin(angle(m.waves, tau, length)) }
+    }
+    return NONE
+}
 
 const lerp = (from, to, t) => from + (to - from)*t
 
@@ -39,22 +128,26 @@ const bezier = (from, control, to, t) => {
     return u*u*from + 2*u*t*control + t*t*to
 }
 
-const sample = (at) => ({ x: at.x, y: at.y, weight: at.weight })
+// What `at` returns: the plan's position and weight, plus which phase the point
+// is in — the station index it belongs to, τ, time since the phase began, and
+// `length`, how long the phase is — so a modulator can be read off the same
+// walk of the list rather than a second one that has to agree with it. A dwell
+// before the first station or after the last is still a dwell: the point is
+// standing.
+const sample = (at, index, tau, length) =>
+    ({ x: at.x, y: at.y, weight: at.weight, phase: "dwell", station: index, tau, length })
 
 // Where the point is partway along the leg out of `from`. The control point
 // belongs to the station the leg leaves, so a curve is a property of the leg
-// rather than of either endpoint.
-const travel = (from, to, t) => from.curve
-    ? {
-        x: bezier(from.x, from.cx, to.x, t),
-        y: bezier(from.y, from.cy, to.y, t),
-        weight: lerp(from.weight, to.weight, t)
-    }
-    : {
-        x: lerp(from.x, to.x, t),
-        y: lerp(from.y, to.y, t),
-        weight: lerp(from.weight, to.weight, t)
-    }
+// rather than of either endpoint — and so is the leg's modulator, which is why
+// the leg is reported under the departing station's index.
+const travel = (from, to, t, index, tau, length) => ({
+    ...(from.curve
+        ? { x: bezier(from.x, from.cx, to.x, t), y: bezier(from.y, from.cy, to.y, t) }
+        : { x: lerp(from.x, to.x, t), y: lerp(from.y, to.y, t) }),
+    weight: lerp(from.weight, to.weight, t),
+    phase: "leg", station: index, tau, length
+})
 
 export default class Animation {
     constructor() {
@@ -191,34 +284,69 @@ export default class Animation {
     // stations** — that is the normal state, and it means the point stands
     // wherever it was left by hand. A caller that treats null as (0, 0) throws
     // every un-animated point into the corner.
+    //
+    // τ on a dwell runs from the station's time, so it is negative in the hold
+    // before the first station: that keeps a modulator continuous through the
+    // station rather than restarting it there. On a leg it runs from the end of
+    // the dwell, where the movement began. Every phase has a finite length
+    // inside the span — the hold before the first station is `first.time`
+    // long, a station's own hold its dwell, a terminal hold runs to the span —
+    // and an integer number of waves over that length lands on the station.
     static at(track, time, duration, loop) {
         const stations = track.stations
         if (stations.length === 0) return null
 
-        const first = stations[0]
-        if (stations.length === 1 || time <= first.time) return sample(first)
-
         const span = Animation.span(duration)
+        const first = stations[0]
+        // Strictly before: the station itself opens its own dwell.
+        if (time < first.time) return sample(first, 0, time - first.time, first.time)
+        if (stations.length === 1) return sample(first, 0, time - first.time, span - first.time)
+
         for (let i = 0; i < stations.length; i++) {
             const from = stations[i],
                 held = from.time + Math.max(0, from.dwell)
+            const next = stations[i + 1]
+            // The last station of a one-shot, or of a loop with no way back,
+            // holds to the end: one hold, however long its dwell says.
+            const terminal = !next && (!loop || held >= span)
             // Standing at this station: the dwell is the opposite of movement,
             // and it is where the exposure builds its bright structure.
-            if (time <= held) return sample(from)
+            if (time <= held || terminal) {
+                return sample(from, i, time - from.time, terminal ? span - from.time : Math.max(0, from.dwell))
+            }
 
-            const next = stations[i + 1]
             if (next) {
                 // A dwell that runs past the next station leaves the leg no
                 // room; the loop then falls through to that station instead.
-                if (time < next.time) return travel(from, next, (time - held)/(next.time - held))
+                if (time < next.time) return travel(from, next, (time - held)/(next.time - held), i, time - held, next.time - held)
                 continue
             }
-            // The last station. A one-shot holds here to the end; a loop joins
-            // back to the first, arriving exactly as the clock wraps.
-            if (!loop || held >= span) return sample(from)
-            return travel(from, first, (time - held)/(span - held))
+            // The last station of a loop joins back to the first, arriving
+            // exactly as the clock wraps.
+            return travel(from, first, (time - held)/(span - held), i, time - held, span - held)
         }
-        return sample(stations[stations.length - 1])
+        const last = stations.length - 1
+        return sample(stations[last], last, time - stations[last].time, span - stations[last].time)
+    }
+
+    // The modulator in charge of the phase `at` reports: the station's own if it
+    // has one, else the track's default. Legs have no slot until T26, so a leg
+    // reads as unmodulated.
+    static modulatorFor(track, at) {
+        if (at.phase !== "dwell") return null
+        const own = track.stations[at.station]
+        const slot = own && own.modulation && own.modulation.dwell
+        return slot || track.modulation.dwell
+    }
+
+    // The offset the plan gets at `at`, with the noise seeded from the run, the
+    // track's identity, the station and the slot — never from the simulation's
+    // Random, whose stream has to be consumed in a fixed order for a seed to
+    // reproduce an image. Same settings on two tracks, different noise.
+    static modulate(track, at, seed) {
+        const m = Animation.modulatorFor(track, at)
+        if (!m) return NONE
+        return modulate(m, at.tau, at.length, `${seed}/${track.id}/${at.station}/${at.phase}`)
     }
 
     // A deliberate canvas change takes the whole figure with it, and a track's
@@ -226,6 +354,10 @@ export default class Animation {
     // same factors the focal points do. Without this, applyTracks would write
     // the old canvas' coordinates straight back over the rescaled points, and an
     // animated point would ignore the resize entirely.
+    //
+    // A modulator's amplitude is pixels too, so it scales — by the shorter-side
+    // factor, the one isotropic number available, since a wobble has no axis to
+    // pick between the two.
     static rescale(track, scaleX, scaleY, scaleWeight) {
         for (const at of track.stations) {
             at.x *= scaleX
@@ -233,7 +365,9 @@ export default class Animation {
             at.cx *= scaleX
             at.cy *= scaleY
             at.weight = Math.round(at.weight*scaleWeight)
+            if (at.modulation.dwell) at.modulation.dwell.amplitude *= scaleWeight
         }
+        track.modulation.dwell.amplitude *= scaleWeight
         return track
     }
 

@@ -26,6 +26,134 @@ Paragraphs, tables, lists.
 
 ---
 
+# Waves per dwell
+
+Date: 2026-09-13
+
+T25b, found in use the same day T25 landed: the sine's three numbers were hard
+to drive, and the reason was the unit. This supersedes the units paragraph of
+"Modulators are functions of phase time" below.
+
+**The periodic kinds now count waves per phase, not cycles per 100 steps.**
+`frequency` became `waves`, the number of full cycles that fit in the phase the
+modulator runs on, so the argument is `2π · waves · τ / length`. At an integer
+count the point ends the dwell exactly where it began it, however long the hold
+is — the property a user reaches for and a per-step frequency cannot promise.
+`orbit` takes `waves` and `waves2`, `pulse` one. **`phase` is gone**: with the
+wave anchored to the dwell, zero is the only value at which the point both
+starts and ends on the station. Drift and tremor keep per-step behaviour — they
+return nowhere, and drift's `speed` stays what it was.
+
+**`Animation.at` reports the phase's `length`**, for dwells and legs alike so T26
+does not have to add it. Every dwell has a finite one inside a span: the hold
+before the first station is `first.time` long (τ runs from `−first.time` to 0
+there, and an integer wave count still lands on zero at the station), a
+station's own hold is its dwell, and a terminal hold — a one-shot's last
+station, or a loop's whose dwell reaches the span — runs to the span. The
+station itself opens its own dwell: `time === first.time` reports the dwell's
+length, not the pre-hold's. **A zero-length phase gets no offset** rather than a
+division by zero; a station with no hold has no time to wobble in.
+
+**The station is a point on the orbit's circle, not its centre.** `A·cos(0)` put
+the point a full amplitude away from the station in the first step and jumped it
+back at the end. Now `x = A·sin(θ₁)`, `y = A·(cos(θ₂) − 1)`: τ = 0 is the
+station, integer waves return to it, nothing jumps.
+
+**Defaults show something.** A slot switched to a kind at amplitude 0 was
+invisible, and the first thing anyone did was wonder whether it worked. A fresh
+modulator has amplitude 15 px and one wave; `kind: none` stays the off state.
+
+Presets saved with `frequency` and `phase` stop meaning anything — pre-release,
+no saved state to keep.
+
+---
+
+# Modulators are functions of phase time
+
+Date: 2026-09-13
+
+T25. A track gives the plan; a **modulator** adds an offset on top of it — a
+tremble, a bob, an orbit, a wander, a pulse of weight — and at amplitude zero
+exactly the stations remain. This entry puts them on **dwells only**; T26 puts the
+same mechanism on legs. The dwell came first because it is where a modulator
+earns the most: a point held perfectly still burns a dead spot into the
+exposure, and a point held still while it trembles keeps drawing structure in
+one place.
+
+**Every kind is a pure function of `(τ, seed, parameters)`, where τ is time since
+the phase began.** This is the decision the rest follows from. A drift written
+the obvious way — integrate a random step each frame — cannot be seeked: landing
+the clock on step 300 would need the 299 steps before it replayed, and the same
+seed would give a different film depending on how the clock got there. So drift
+is a sum of three sines per axis with seeded frequencies and phases, and tremor
+is a hash of `(seed, τ)` per step through `Random.hash`. Nothing in
+`Animation.js` holds state between steps, and the harness checks the point
+directly: for every kind, the value after evaluating 0…300 in order equals a cold
+evaluation at 300.
+
+**The seed is the run's seed, the track's id, the station's index and the slot,
+never the simulation's `Random`.** Same rule grain follows. The simulation's
+stream has to be consumed in a fixed order for a seed to reproduce an image; a
+modulator drawing from it would make the particles depend on how long the
+animation ran. The track's id is in the seed so two tracks with identical
+settings do not move identically — which is the reason ids exist at all, and why
+T24 went to the trouble of keeping them unique.
+
+**`Animation.at` reports the phase.** It now returns `{x, y, weight, phase,
+station, tau}`: which kind of phase the point is in, the station the phase
+belongs to (a leg's is the station it leaves — the leg's control point already
+lives there, and its modulator will too), and τ. Reading the modulator off the
+same walk of the station list is what keeps it from disagreeing with a second
+walk. `null` still means "no track". **τ on a dwell counts from the station's
+time, so it is negative in the hold before the first station** — the point is
+already standing, and a modulator that restarted at the station would stitch two
+unrelated wobbles together there. A one-shot's hold to the end is the last
+station's dwell, still counting. On a leg τ counts from the end of the dwell,
+where the movement began.
+
+**Where it composes.** `applyTracks` in `main.js` is the one place the plan and
+the modulation become a point's position. Everything else reads the plan: the
+station list, the canvas markers, and — the case the task named —
+`Panel.addStation`, which used to copy `point.x, point.y` and would have frozen
+one shaking instant into a station. It now reads `Animation.at` and falls back to
+the point only for a track with no stations. On the canvas the moving dot shows
+the *plan* and the cross shows the point; with a tremor running the two
+disagree, which is the modulation made visible.
+
+**The weight pulse lives in Manual weight mode**, exactly as station weights do
+after "The shared weight is one number for every point and every station" below.
+`applyTracks` adds the pulse only while `manualWeight` is on, and the panel locks
+the pulse's numbers and greys the `pulse` option while the shared slider is in
+charge. A pulse is a weight that differs from step to step; that is what Manual
+means.
+
+**Amplitude is pixels, so it rescales** with the stations in
+`Animation.rescale`, by the shorter-side factor — the one isotropic number
+available, since a wobble has no axis to pick between the two. Frequencies are
+cycles per 100 steps and phases are degrees, because the clock counts steps and
+those are the units a person can type.
+
+**Storage and UI.** A modulator is one flat shape for every kind, so a slot can
+change kind without losing the numbers it had and `Preset.js` validates one set
+of fields. The track carries a default in `track.modulation.dwell` that every
+station inherits; a station's own lives in `station.modulation.dwell`, `null` to
+inherit — a separate key because `station.dwell` is already the hold's length,
+and the `leg` slot goes beside it in T26. A preset carries the default always and
+a station's slot only when it overrides, so an inheriting station comes back
+inheriting; a slot that is present and malformed refuses the whole track list,
+like every other damaged shape. On the Playback tab a **Dwell modulation** block
+sits above the station list, and each station has an "own dwell modulation"
+checkbox under its hold that reveals the same form, copying the track's default
+as a starting point. The track default is editable whenever the timeline is
+stopped — it is a track edit, not a station edit; a station's own form locks with
+the station.
+
+**One modulator per dwell.** Stacking a drift with a tremor is an obvious want;
+the extra list-of-forms UI it would cost is not worth it until the single one has
+been used, and the flat shape does not prevent it later.
+
+---
+
 # Stations are the track; a leg is what falls between two of them
 
 Date: 2026-09-09

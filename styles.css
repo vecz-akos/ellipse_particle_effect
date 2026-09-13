@@ -383,6 +383,36 @@ button.wide {
     margin-top: .25rem;
 }
 
+/* A modulator's form: the kind, then its numbers two to a row. The same form
+   serves the track's default and a station's own. */
+.modulation {
+    margin: .35rem 0;
+}
+
+.modulator {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+}
+
+.modulator select {
+    width: 100%;
+}
+
+.modulator-fields {
+    grid-template-columns: 1fr 1fr;
+}
+
+.modulator-fields[hidden] {
+    display: none;
+}
+
+.station-modulation {
+    margin-top: .25rem;
+    color: var(--text-dim);
+    font-size: 11px;
+}
+
 .station-field {
     display: flex;
     align-items: center;

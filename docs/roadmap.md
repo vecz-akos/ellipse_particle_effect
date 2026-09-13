@@ -322,11 +322,20 @@ perturbs the result — at amplitude zero, exactly the stations remain.
 
   | kind | parameters | what it gives |
   | --- | --- | --- |
-  | sine, perpendicular to the leg | amplitude, frequency, phase | a predictable wave along the trajectory — the point weaves instead of sliding |
-  | two sines, on x and y | amplitude, two frequencies, phase | circles and Lissajous figures; a point can orbit while the leg carries it |
-  | smooth random walk | amplitude, how fast it wanders | organic drift that never repeats but is not twitchy |
+  | sine | amplitude, waves | a predictable wave: up and down on a dwell, perpendicular to the leg on a leg — the point weaves instead of sliding |
+  | orbit (two sines, on x and y) | amplitude, two wave counts | circles and Lissajous figures through the station; a point can orbit while the leg carries it |
+  | smooth random drift | amplitude, how fast it wanders | organic drift that never repeats but is not twitchy |
   | per-frame tremor | amplitude | the actual shake — small, fast, and the least predictable |
-  | weight pulse | amplitude, frequency | the figure breathes on a timer rather than along a leg |
+  | weight pulse | amplitude, waves | the figure breathes on a timer rather than along a leg |
+
+  Every one of them is a **pure function of time since the phase began and a
+  seed** — never a state carried from the previous step. A drift written as a
+  random walk cannot be seeked and cannot be reproduced; written as seeded value
+  noise it can be both. **Built on dwells (T25) — see "Modulators are functions
+  of phase time" and "Waves per dwell" in `docs/decisions.md`;** legs are T26.
+  The periodic kinds count waves per phase, so a whole number returns the point
+  to the station as the hold ends; amplitudes are pixels; the drift is a sum of
+  seeded sines, the tremor a hash of the step.
 
   Predictable and random are both wanted, so treat this as a small set of
   interchangeable modulators rather than one "jitter" slider.
@@ -387,13 +396,15 @@ its own decision with its own entry, not a detail of path work.
 
 ### The Playback tab
 
-**Built, apart from the modulators (T23, T23b, T24).** Duration, play/pause,
-loop or one-shot and a scrub are on the tab, and below them the open point's
-track: a station list with times, positions, weights and dwells, a mini time bar,
-a curve toggle per leg, and stations draggable on the canvas. The clock counts
-simulation steps rather than milliseconds, so pausing the exposure pauses the
-timeline. See "The animation clock counts steps" and "Stations are the track" in
-`docs/decisions.md`. What is left on this tab is **modulation**.
+**Built (T23, T23b, T24, T25), apart from the leg modulators.** Duration,
+play/pause, loop or one-shot and a scrub are on the tab, and below them the open
+point's track: a Dwell modulation block with the track's default, a station list
+with times, positions, weights, dwells and a per-station modulation override, a
+mini time bar, a curve toggle per leg, and stations draggable on the canvas. The
+clock counts simulation steps rather than milliseconds, so pausing the exposure
+pauses the timeline. See "The animation clock counts steps", "Stations are the
+track" and "Modulators are functions of phase time" in `docs/decisions.md`. What
+is left on this tab is the **leg slot** (T26).
 
 **It stays in the right-hand panel. There is no timeline strip along the bottom
 of the window.** A bottom strip is where an editor puts time when it wants to

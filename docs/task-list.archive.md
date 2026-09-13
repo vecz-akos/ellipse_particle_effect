@@ -1332,3 +1332,176 @@ matters, the `docs/decisions.md` entry says so.
 - Tracks survive a preset round-trip, ids included.
 - The same seed, animation and step count produce the same image twice, verified
   by comparing buffers rather than by eye.
+
+---
+
+## T25 — Modulators on a dwell
+
+- **Kind:** feature
+- **Roadmap:** Phase 5.3
+- **Touches:** `scripts/Animation.js`, `scripts/Panel.js`, `scripts/Preset.js`, `scripts/main.js`
+- **Status:** done — see "Modulators are functions of phase time" in `docs/decisions.md`
+- **Blocked by:** T24
+
+**Prompt**
+
+> A track gives a plan; a **modulator** gives it character. It is an offset
+> added on top of what `Animation.at` says, never a replacement, so every kind
+> vanishes at amplitude zero. **This task puts modulators on dwells only.** Legs
+> are T26, and the split is deliberate: the mechanism is the same for both, the
+> dwell is where it matters most, and building the mechanism once on the simpler
+> phase keeps this task small. Build it so T26 is a second read site, not a
+> second implementation.
+>
+> Use the vocabulary in "The words this phase uses" in `docs/roadmap.md`. A
+> **dwell** is time held at a station; a point held perfectly still burns a dead
+> spot into the exposure, and a point held still while it trembles or pulses
+> keeps drawing structure in one place — which is where the bright detail comes
+> from. That is what this task buys.
+>
+> **The kinds, on a dwell:**
+>
+> | kind | parameters | on a dwell |
+> | --- | --- | --- |
+> | sine | amplitude, frequency, phase | up and down along the screen's y axis — a predictable bob |
+> | orbit (two sines, x and y) | amplitude, two frequencies, phase | circles and Lissajous figures around the station |
+> | drift (smooth random) | amplitude, wander speed | organic wandering that never repeats and is not twitchy |
+> | tremor | amplitude | the actual shake: small, fast, least predictable |
+> | weight pulse | amplitude, frequency | the figure breathes on a timer |
+>
+> The sine's direction is **screen-vertical on a dwell** because a dwell has no
+> direction of its own; on a leg (T26) it turns perpendicular to the leg. No
+> direction parameter — this is a derived property of the phase.
+>
+> **Every modulator is a pure function of `(τ, seed, parameters)`, where τ is
+> time since the phase began.** This is the trap of the task. A drift written as
+> a random *walk* — integrate a random step each frame — cannot be seeked: landing
+> the clock on step 300 would need the 299 steps before it replayed, and the same
+> seed would give a different film depending on how the clock got there. Write
+> drift as value noise or a sum of a few sines with seeded random phases, and
+> tremor as a hash of `(seed, τ)` per step — `Random.hash` already exists for
+> exactly this shape. Nothing here holds state between steps.
+>
+> **Seeding.** Each modulator's randomness comes from the run's seed, the track's
+> `id`, the station's index and the slot — never from the simulation's `Random`.
+> That rule is the same one grain follows and it is not negotiable: the seed
+> reproduces an image only because the simulation's stream is consumed in a
+> fixed order, and a modulator pulling from it would make the particles depend
+> on how long the animation ran. Two tracks with identical settings must not move
+> identically, which is what the track id in the seed is for.
+>
+> **`Animation.at` has to say which phase it is in.** Today it returns
+> `{x, y, weight}` or `null`. The modulator needs the phase kind, the station
+> index and τ, and T26 will need the leg's direction. Put that on the return
+> value rather than writing a second walk of the station list that has to agree
+> with the first. Keep `at` pure and keep `null` meaning "no track".
+>
+> **Where it composes.** `applyTracks` in `main.js` is the one place the plan
+> becomes a point's position; the modulated result goes onto the point there.
+> Two readers must **not** see the modulated position:
+>
+> - **`addStation`** copies `point.x, point.y` today. With a tremor running that
+>   would freeze a shaking instant into a station. It must read the unmodulated
+>   `at()` when the clock is on a track, and the plain point only when there is
+>   no track.
+> - **The canvas overlay's station markers** draw the plan, not the wobble; the
+>   moving dot may show either, but say which.
+>
+> **Amplitude is in pixels**, so it is a canvas coordinate and belongs in
+> `Animation.rescale` along with the station's position — `AGENTS.md` states the
+> rule. **Weight pulse lives in Manual weight mode**, exactly as station weights
+> do; in shared mode it is locked with them.
+>
+> **Storage and UI.** A modulator hangs off a station in a **dwell slot**, and
+> the track carries a **default that stations inherit** and can override — so a
+> twenty-station track is not twenty forms. New station fields must be added to
+> `animationTracks` in `Preset.js` or they will be validated away silently. In
+> the panel, a track-level Modulation block above the station list, and a
+> collapsed per-station override under the station's `hold` field; leave room in
+> the layout for T26's leg slot without building it.
+>
+> **One modulator per dwell for now.** Stacking a drift with a tremor is an
+> obvious want; if it costs more UI than it is worth, ship one and say so in the
+> entry rather than half-doing it.
+>
+> **Not in this task:** legs (T26), export, and animating the step-curve
+> constants — the last is the strongest remaining knob and the one most likely
+> to wreck the look, and it is its own decision.
+
+**Done when**
+
+- Each kind runs during a dwell, composes with the station's position, and
+  vanishes at amplitude zero.
+- Seeking to any step gives the same modulated position as playing to it.
+- A station added while a tremor runs lands on the unmodulated position.
+- Two tracks with identical modulator settings do not move identically.
+- The same seed and animation reproduce the same image, verified by comparing
+  buffers rather than by eye.
+- Modulator amplitude follows a canvas rescale.
+- A preset round-trips the track default and a per-station override.
+
+---
+
+## T25b — Waves per dwell, not cycles per 100 steps
+
+- **Kind:** feature
+- **Roadmap:** Phase 5.3
+- **Touches:** `scripts/Animation.js`, `scripts/Panel.js`, `scripts/Preset.js`
+- **Status:** done — see "Waves per dwell" in `docs/decisions.md`
+- **Blocked by:** T25, which has landed
+
+**Prompt**
+
+> Found in use: the sine modulator's three parameters are hard to drive, and
+> the reason is the unit. Frequency is "cycles per 100 steps", which is tied to
+> nothing the user is looking at, and `phase` — the wave's starting angle — is
+> the kind of number that is only ever right at zero.
+>
+> **Re-express the periodic modulators in waves per dwell.** Replace
+> `frequency` with `waves`: the number of full cycles that fit in the phase the
+> modulator is running on, so the argument is `2π · waves · τ / length`. At an
+> integer `waves` the point ends the dwell exactly where it started it, however
+> long the hold is — which is the property the user is reaching for and cannot
+> get from a per-step frequency. `orbit` takes two (`waves`, `waves2`), `pulse`
+> takes one. **Drop `phase`**: with the wave anchored to the dwell, zero is the
+> only value at which the point both starts and ends at the station, so the
+> parameter has nothing left to say. `drift` and `tremor` are untouched — they
+> do not return anywhere and their `speed` stays per step.
+>
+> **`Animation.at` has to report the phase's length**, not only τ. Every dwell
+> has a finite one inside a span: the hold before the first station is
+> `first.time` long (τ runs from `-first.time` to 0 there, and an integer wave
+> count still lands on zero at the station), a station's own hold is its
+> `dwell`, and the terminal hold of a one-shot is `span - time`. A zero-length
+> dwell has no time to modulate in: return no offset rather than dividing by it.
+> T26 will want the leg's length the same way, so put it on the return value
+> once, for both phase kinds.
+>
+> **Fix the orbit's start while here.** `x = A·cos(0)` puts the point a full
+> amplitude away from the station in the first step of the dwell, and it jumps
+> back at the end. The circle is currently *around* the station; a point holding
+> at a station wants a circle *through* it: `x = A·sin(θ₁)`, `y = A·(cos(θ₂) − 1)`
+> or the equivalent, so τ = 0 is the station, integer waves return to it, and
+> nothing jumps. Say in the entry that the station is a point on the circle,
+> not its centre.
+>
+> **Defaults that show something.** A slot switched to a kind with amplitude 0
+> is invisible, and the first thing a user does is wonder whether it works. New
+> defaults: amplitude 15 px, waves 1. `kind: none` stays the off state; the
+> numbers are for when a kind is chosen.
+>
+> Rename the fields in `Preset.js`'s validation and in the panel's `FIELDS` with
+> the model — there is no saved state to keep, per Project state. Frequencies
+> and phases in existing files stop meaning anything; that is fine.
+
+**Done when**
+
+- A sine with `waves: 2` on a 200-step dwell crosses the station four times and
+  is on it at τ = 0 and τ = 200; the same settings on a 50-step dwell do the
+  same in 50 steps.
+- An orbit is on the station at τ = 0 and back on it at the end of the dwell
+  for integer waves, with no jump at either end.
+- `phase` is gone from the model, the preset validation and the panel.
+- Choosing a kind on a fresh slot moves the point visibly without touching a
+  number.
+- Seeking still gives the same position as playing to it.

@@ -169,6 +169,15 @@ which is the normal state and means the point stands where it was left.
 assumes it has run. It touches no DOM and has no notion of which stations are in
 the past — that lock belongs to `Panel`.
 
+`at` also reports the **phase** — dwell or leg, the station it belongs to, and τ,
+time since it began — and that is what a **modulator** reads. The module exports
+`KINDS`, `modulator` and `modulate`: a modulator is a flat record (kind and
+numbers) and `modulate(m, τ, seed)` is a pure function returning an offset in
+x, y and weight. `Animation.modulate(track, at, seed)` picks the slot in charge —
+the station's own `modulation.dwell` or the track's default — and seeds the
+noise from the run seed, the track id, the station and the slot. Nothing holds
+state between steps, so seeking equals playing.
+
 ### `scripts/main.js`
 
 The application. Owns the canvas and its 2D context, the density buffer and its
@@ -192,7 +201,7 @@ requestAnimationFrame
    └─ update()
        ├─ exposing && followFocalPoint ? focalPoints[0] ← mouse, in canvas pixels
        ├─ exposing ? step()                        ← and raise needsRender
-       │    ├─ applyTracks()                              ← Animation.at, before anything moves
+       │    ├─ applyTracks()                              ← Animation.at + modulate, before anything moves
        │    ├─ for each particle:
        │    │     error = nEllipse.calcDistance(particle)   ← NEllipse
        │    │     particle steps by f(error) in a seeded random direction ← Particle, Random

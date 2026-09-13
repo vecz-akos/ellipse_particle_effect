@@ -112,6 +112,20 @@ Rules for all of it:
   intermediate values of a number being typed would snap onto neighbours, let
   `normalise` clamp a dwell to zero for good, and burn the figure's detour into
   a running exposure. The other station fields update live.
+- **A modulator is a pure function of `(τ, seed, parameters)` and never touches
+  the simulation's `Random`.** Nothing in `Animation.js` holds state between
+  steps, so seeking to a step gives the same wobble as playing to it; a random
+  walk that integrates a step per frame breaks that, and a modulator that drew
+  from the simulation's stream would make the particles depend on how long the
+  animation ran. The seed is the run's seed, the track's id, the station index
+  and the slot — see "Modulators are functions of phase time" in
+  `docs/decisions.md`.
+- **`applyTracks` in `main.js` is the only place the plan and its modulation
+  compose.** Everything else — `Panel.addStation`, the station list, the canvas
+  markers — reads `Animation.at`, the plan. Copy `point.x` into a station and a
+  tremor gets frozen into it. `Animation.at` returns the phase, the station
+  index and τ alongside the position; read a modulator off that rather than
+  walking the station list a second time.
 - **`Animation.normalise` clamps every dwell to the gap before the next
   station**, on every edit and every preset load. Without it a dwell can outrun
   its leg and the point teleports. `Animation.at` assumes normalised input; do
@@ -176,7 +190,8 @@ Rules for all of it:
   stands. **`rescaleFocalPoints` scales the animation's stations too** — they
   are figure, and `applyTracks` runs right after it and would otherwise write
   the old canvas back over the points. Anything new that holds a canvas
-  coordinate belongs in that function.
+  coordinate belongs in that function — a modulator's amplitude is pixels, and
+  `Animation.rescale` scales it too.
 - The keyboard handler returns early when the event comes from inside `.panel`,
   so typing a seed does not toggle modes. After changing `Params` from a
   shortcut it calls `panel.sync()`, or the controls would show stale values.
@@ -188,7 +203,9 @@ Rules for all of it:
   `Animation.setWeight`), or `applyTracks` would put the stations' old weights
   back on the next step and the Weight slider would do nothing to an animated
   point. The station's `w` field is the third view of that number and is locked
-  with the per-point one; weight animation is what Manual mode is for. Add
+  with the per-point one; weight animation is what Manual mode is for, and so
+  is the weight pulse modulator — `applyTracks` adds it only under
+  `manualWeight`, and the panel locks its numbers otherwise. Add
   panel state that `sync` does not restore and the
   first preset loaded from a differently sized canvas will expose it. It calls
   back into the handlers, so it must not run from the `Panel` constructor — and

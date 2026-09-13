@@ -137,6 +137,17 @@ Station times snap to other points' station times, so two points can be made to
 arrive together without typing matching numbers. A point with no stations is
 untouched by any of this.
 
+A held point can also **wobble while it holds**. The **Dwell modulation** block
+above the station list sets a movement that every hold on the track adds on top
+of the plan — a vertical **sine**, an **orbit**, a smooth random **drift**, a
+per-step **tremor**, or a **pulse** of the weight (Manual weight mode only) —
+and any station can carry its own instead of the track's. A trembling point
+keeps drawing structure in one place instead of burning a dead spot. Amplitude
+is in pixels; **waves** is how many full cycles fit in the hold, so a whole
+number brings the point back to the station exactly as the hold ends, however
+long it is. Every wobble is computed from the step and the seed, so the same
+link gives the same film however you scrub to a step.
+
 **Pausing stops the exposure, not the app.** Nothing is added to the image and
 the particles stand still, but everything else keeps working — so the way to
 finish an image is to pause it and then take your time on the Look tab. Every
