@@ -106,6 +106,16 @@ export default class Panel {
         return section
     }
 
+    // An explanation behind a hover, on the line of the heading it belongs to.
+    // A plain title: no positioning code, and focusable for the keyboard.
+    help(parent, text) {
+        const icon = el("span", "help", "?")
+        icon.title = text
+        icon.tabIndex = 0
+        parent.appendChild(icon)
+        return icon
+    }
+
     row(parent, label, input, valueNode) {
         const row = el("label", "row")
         row.appendChild(el("span", "label", label))
@@ -370,15 +380,16 @@ export default class Panel {
 
         // Colours first: the ramp is the first thing reached for when grading.
         const ramp = this.section(body, "Colours")
+        this.help(ramp.firstChild, "Position 0 is empty canvas, 1 is the densest pixel.")
         this.stopList = el("div", "stop-list")
         ramp.appendChild(this.stopList)
         const addStop = el("button", "wide", "Add stop")
         addStop.addEventListener("click", () => this.addGradientStop())
         ramp.appendChild(addStop)
-        ramp.appendChild(el("p", "hint", "Position 0 is empty canvas, 1 is the densest pixel."))
         this.syncGradientStops()
 
         const bloom = this.section(body, "Bloom")
+        this.help(bloom.firstChild, "Blurs the density itself, before the tone map, so the halo takes its colour from the middle of the ramp.")
         this.toggle(bloom, "Enabled", {
             read: () => params.bloom.enabled,
             write: (v) => params.bloom.enabled = v
@@ -401,9 +412,9 @@ export default class Panel {
             min: 0, max: 1, step: .01,
             format: fixed(2)
         })
-        bloom.appendChild(el("p", "hint", "Blurs the density itself, before the tone map, so the halo takes its colour from the middle of the ramp."))
 
         const tone = this.section(body, "Tone map")
+        this.help(tone.firstChild, "The look is applied to whatever the image already holds — grade it with the exposure paused. Adaptation only matters while the exposure runs: lower, and a fresh bright area burns out for longer before the picture darkens around it.")
         this.slider(tone, "Exposure", {
             read: () => params.exposure,
             write: (v) => params.exposure = v,
@@ -422,10 +433,9 @@ export default class Panel {
             min: .01, max: 1, step: .01,
             format: fixed(2)
         })
-        tone.appendChild(el("p", "hint", "Adaptation only matters while the exposure runs: lower, and a fresh bright area burns out for longer before the picture darkens around it."))
-        tone.appendChild(el("p", "hint", "The look is applied to whatever the image already holds — grade it with the exposure paused."))
 
         const vignette = this.section(body, "Vignette")
+        this.help(vignette.firstChild, "The edge fades towards the ramp's colour at 0, not towards black.")
         this.toggle(vignette, "Enabled", {
             read: () => params.vignette.enabled,
             write: (v) => params.vignette.enabled = v
@@ -449,9 +459,8 @@ export default class Panel {
             format: fixed(2)
         })
 
-        vignette.appendChild(el("p", "hint", "The edge fades towards the ramp's colour at 0, not towards black."))
-
         const grain = this.section(body, "Grain")
+        this.help(grain.firstChild, "Coverage is how much of the frame gets a speck at all. Grain follows the image — the empty canvas stays clean.")
         this.toggle(grain, "Enabled", {
             read: () => params.grain.enabled,
             write: (v) => params.grain.enabled = v
@@ -479,7 +488,6 @@ export default class Panel {
             write: (v) => params.grain.mono = v,
             hint: "Off: each channel gets its own noise, which reads as colour speckle."
         })
-        grain.appendChild(el("p", "hint", "Coverage is how much of the frame gets a speck at all. Grain follows the image — the empty canvas stays clean."))
     }
 
     // The run controls live in a footer, outside the tabs: they are the things a
@@ -592,6 +600,7 @@ export default class Panel {
             animation = this.animation
 
         const timeline = this.section(body, "Timeline")
+        this.help(timeline.firstChild, "Scrubbing back does not clear the image — re-running a stretch draws over what is already there. Use the mode button to start a new exposure.")
 
         const transport = el("div", "modes")
         this.playButton = this.exportLocked(this.toggleButton(transport, (on) => on ? "Pause" : "Play", {
@@ -641,7 +650,6 @@ export default class Panel {
         this.timeReadout = el("p", "readout", "")
         timeline.appendChild(this.timeReadout)
         timeline.appendChild(el("p", "hint", "Duration is counted in simulation steps rather than seconds, so a run reproduces exactly. At 60 fps a step is about 17 ms."))
-        timeline.appendChild(el("p", "hint", "Scrubbing back does not clear the image — re-running a stretch draws over what is already there. Use the mode button to start a new exposure."))
 
         this.buildTrack(body)
         this.buildExport(body)
@@ -654,6 +662,7 @@ export default class Panel {
     buildExport(body) {
         const params = this.params
         const section = this.section(body, "Timelapse")
+        this.help(section.firstChild, "Frames are stamped as they arrive, so a slow canvas makes a slower film, never a dropped frame.")
 
         this.exportLocked(this.slider(section, "Steps per frame", {
             read: () => params.animation.stepsPerFrame,
@@ -671,7 +680,14 @@ export default class Panel {
             if (this.handlers.exportTimelapse) this.handlers.exportTimelapse()
         })
         section.appendChild(this.exportButton)
-        section.appendChild(el("p", "hint", "Starts a new exposure and plays the timeline from the start, recording every frame without the overlay; the finished image stays on the canvas, paused. Press again to cancel. Frames are stamped as they arrive, so a slow canvas makes a slower film, never a dropped frame."))
+        // The file the button writes, always shown, so the line under it that
+        // does change only has to say how far the export got.
+        this.exportFile = el("p", "readout", "")
+        section.appendChild(this.exportFile)
+        // Progress and the outcome; hidden until an export has said something.
+        this.exportStatus = el("p", "hint", "")
+        this.exportStatus.hidden = true
+        section.appendChild(this.exportStatus)
     }
 
     // One point selected at a time, chosen here or by clicking it on the canvas.
@@ -682,6 +698,7 @@ export default class Panel {
     // docs/roadmap.md.
     buildTrack(body) {
         const section = this.section(body, "Track")
+        this.help(section.firstChild, "A station is editable only while the timeline is stopped and the clock sits exactly on it. Click a row, away from its fields, to go there.")
 
         this.trackSelect = el("select")
         this.trackSelect.addEventListener("change", () => {
@@ -726,8 +743,6 @@ export default class Panel {
 
         this.playbackStatus = el("p", "hint", "")
         section.appendChild(this.playbackStatus)
-        section.appendChild(el("p", "hint", "A station can only be edited while the timeline is stopped and the clock sits exactly on it — click a row, away from its fields, to go there. What the exposure has already burned in cannot be un-burned."))
-        section.appendChild(el("p", "hint", "While the shared Weight slider is in charge it sizes every station too; turn Manual on (Parameters tab) to animate a point's weight."))
 
         this.selectedPoint = -1
         this.syncTracks()
@@ -977,18 +992,18 @@ export default class Panel {
         this.modulationBlock.hidden = !track
         if (!track) return
         const locked = () => this.animation.playing
-        this.modulationBlock.appendChild(el("p", "readout", "Dwell modulation"))
+        const dwell = el("p", "readout", "Dwell modulation")
+        this.help(dwell, "Added while the point holds at a station; amplitude is in pixels, waves are full cycles per hold.")
+        this.modulationBlock.appendChild(dwell)
         this.modulatorForm(this.modulationBlock, () => track.modulation.dwell, {
             locked, onEdit: () => this.editedStation()
         })
-        this.modulationBlock.appendChild(el("p", "hint",
-            "Added on top of the plan while the point holds at a station. Amplitude is in pixels; waves is how many full cycles fit in the hold, so a whole number ends where it started."))
-        this.modulationBlock.appendChild(el("p", "readout", "Leg modulation"))
+        const leg = el("p", "readout", "Leg modulation")
+        this.help(leg, "Added while the point travels to the next station, the sine swinging across the leg; waves are full cycles per leg.")
+        this.modulationBlock.appendChild(leg)
         this.modulatorForm(this.modulationBlock, () => track.modulation.leg, {
             locked, onEdit: () => this.editedStation()
         })
-        this.modulationBlock.appendChild(el("p", "hint",
-            "The same, while the point travels to the next station: the sine swings across the leg, the orbit rides along it. Every station takes these unless it has its own."))
     }
 
     // A station's own slot, collapsed behind a checkbox: ticking it copies the
@@ -1233,6 +1248,12 @@ export default class Panel {
         this.playbackStatus.classList.toggle("failed", failed)
     }
 
+    setExportStatus(text, failed=false) {
+        setText(this.exportStatus, text)
+        this.exportStatus.hidden = !text
+        this.exportStatus.classList.toggle("failed", failed)
+    }
+
     // The shared weight or a canvas drag changed a station: the numbers the row
     // still shows follow without rebuilding it, which would pull the cursor out
     // of a field. A drag moves x and y, which the row no longer prints — the
@@ -1263,9 +1284,10 @@ export default class Panel {
     // one, and the seconds that makes at 60 fps — the best case, since the
     // recorder stamps frames as they arrive.
     refreshExportReadout() {
-        if (!this.exportReadout || !this.handlers.exportFrames) return
+        if (!this.exportFile || !this.handlers.exportFrames) return
         const frames = this.handlers.exportFrames()
         setText(this.exportReadout, `${frames} frames — ${(frames/60).toFixed(1)} s at 60 fps`)
+        if (this.handlers.exportName) setText(this.exportFile, this.handlers.exportName())
     }
 
     // Runs every frame while the timeline plays, so every write is guarded —
@@ -1453,10 +1475,13 @@ export default class Panel {
 
     setSeed(seed) {
         this.seedInput.value = seed
+        // The film's file name carries the seed and the canvas size.
+        this.refreshExportReadout()
     }
 
     setCanvasSize(width, height) {
         setText(this.sizeReadout, `${width} × ${height} px`)
+        this.refreshExportReadout()
     }
 
     // Rereads everything from Params: values, the weight slider's range, and

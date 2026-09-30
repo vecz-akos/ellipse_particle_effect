@@ -1829,3 +1829,86 @@ matters, the `docs/decisions.md` entry says so.
 - Clicking anywhere in a station row that is not a control seeks to that
   station; clicking its fields, its checkboxes and its `×` does not.
 - A station row looks clickable, and the row the clock is on is marked.
+
+---
+
+## T29 — A help icon, and far fewer standing hints on the Playback tab
+
+- **Kind:** feature
+- **Roadmap:** Phase 5 addendum
+- **Touches:** `scripts/Panel.js`, `styles.css`
+- **Status:** done — see "Help icons, and the Playback and Look tabs lose their standing hints" in `docs/decisions.md`. The premise that a status line already sat under the export button was false; one was added.
+- **Blocked by:** —
+
+**Prompt**
+
+> The Playback tab explains itself at length and the explanations have become
+> the noise. Every `p.hint` under a control is permanent, so text written once
+> to teach a feature is then read a hundred times by someone who already knows
+> it. Two changes: a way to put an explanation behind a hover, and a cull.
+>
+> **1. A help icon.** A small `?` beside a heading or a control; the explanation
+> appears on hover as a tooltip. Build it as one helper on `Panel` — something
+> like `help(parent, text)` appending a `<span class="help" title="…">?</span>`
+> — so it is one call per use and the styling lives in one rule. `title` is
+> enough: it needs no JavaScript, it is reachable by keyboard focus if the
+> element is focusable, and this panel is built from native inputs on purpose.
+> Do not build a custom hover-panel with positioning logic for this.
+>
+> Size it so it reads as an affordance and not as content: the hint colour, a
+> circled or bracketed `?`, `cursor: help`. It goes on the same line as the
+> heading it belongs to, not on a line of its own — a help icon that takes a row
+> has saved nothing.
+>
+> **2. What to remove from the Playback tab**, named exactly:
+>
+> - **The Timelapse section's hint** — the paragraph starting "Starts a new
+>   exposure and plays the timeline from the start" — goes entirely. The button
+>   says what it does and the status line reports what happened.
+> - **"While the shared Weight slider is in charge…"** goes. It answers a
+>   question nobody has while looking at this tab; the shared-weight rule is
+>   already enforced by the locked `w` fields, and the Parameters tab is where
+>   weight is set.
+> - **"A station can only be edited while the timeline is stopped and the clock
+>   sits exactly on it…"** goes from its standing place. It is real and worth
+>   keeping — move it behind a help icon on the **Track** heading, shortened.
+> - **"Scrubbing back does not clear the image…"** goes from its standing place
+>   too, the same way — it belongs with the same help icon or the Timeline
+>   heading's.
+> - **"Duration is counted in simulation steps rather than seconds…"** *stays*
+>   where it is. It explains the unit of the control right above it, which is the
+>   one case a standing hint earns its row.
+> - **The two modulation paragraphs** ("Added on top of the plan while the point
+>   holds…" and "The same, while the point travels…") go behind help icons on
+>   the **Dwell modulation** and **Leg modulation** headings, and get **shorter**
+>   — one sentence each. The unit facts (amplitude in pixels, waves per phase)
+>   are worth keeping; the rest can go.
+>
+> **The file name belongs under the button that writes the file.** The Presets
+> section's standing text names the JSON's contents, and `presetStatus` doubles
+> as that line — the same paragraph is both the explanation and the "Saved
+> as …" report. Leave Presets alone, but make the **Timelapse** section report
+> its file the same way: the status line under the export button is where the
+> `.webm`'s name shows up, not in a sentence written before anything was
+> exported.
+>
+> **Leave the other tabs alone.** Parameters, Look and Render have their own
+> hint density and are not the complaint. If a help icon obviously wants to
+> replace one of those later, that is a separate task with its own list.
+>
+> **Do not delete an explanation that has no other home.** Everything above is
+> either being moved behind an icon or is genuinely redundant with a control,
+> a status line, or another tab. A rule that exists only in a hint — and the
+> station edit lock is one — has to end up somewhere a user can still find it.
+
+**Done when**
+
+- A `?` icon next to a heading shows its explanation on hover and takes no
+  extra row.
+- The Playback tab has at most two standing hint paragraphs left: the duration
+  unit, and the status line.
+- The station edit rule and the scrub-does-not-clear rule are both still
+  readable from the tab, behind an icon.
+- The exported `.webm`'s name appears in the Timelapse status line, and the
+  section has no paragraph before the first export.
+- The other tabs' hints are unchanged.

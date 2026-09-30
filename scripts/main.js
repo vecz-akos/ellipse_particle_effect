@@ -500,13 +500,15 @@ const exportFrames = () => {
     return Math.ceil(span/perFrame) + 1
 }
 
+const exportName = () => `n-ellipse-${random.seed}-${width}x${height}.webm`
+
 const exportTimelapse = () => {
     if (exportRun) {
         cancelExport()
         return
     }
     if (typeof MediaRecorder === "undefined" || typeof canvas.captureStream !== "function") {
-        panel.setPlaybackStatus("This browser cannot record a canvas.", true)
+        panel.setExportStatus("This browser cannot record a canvas.", true)
         return
     }
 
@@ -525,8 +527,8 @@ const exportTimelapse = () => {
     recorder.addEventListener("stop", () => {
         if (!run.finished) return
         const blob = new Blob(chunks, { type: recorder.mimeType || "video/webm" })
-        download(blob, `n-ellipse-${random.seed}-${width}x${height}.webm`)
-        panel.setPlaybackStatus(`Exported ${run.frame} frames as n-ellipse-${random.seed}-${width}x${height}.webm.`)
+        download(blob, exportName())
+        panel.setExportStatus(`Exported ${run.frame} frames.`)
     })
 
     const run = {
@@ -591,7 +593,7 @@ const captureExportFrame = () => {
     if (track && typeof track.requestFrame === "function") track.requestFrame()
     else if (typeof run.stream.requestFrame === "function") run.stream.requestFrame()
     run.frame++
-    panel.setPlaybackStatus(`Exporting — frame ${run.frame} of ${run.total}.`)
+    panel.setExportStatus(`Exporting — frame ${run.frame} of ${run.total}.`)
 }
 
 // The film is done: the exposure is held with the finished picture in it,
@@ -638,7 +640,7 @@ const cancelExport = () => {
     applyTracks()
     panel.setExporting(false)
     panel.sync()
-    panel.setPlaybackStatus("Export cancelled — no file was written.")
+    panel.setExportStatus("Export cancelled — no file was written.")
     needsRender = true
 }
 
@@ -789,6 +791,7 @@ window.onload = () => {
         resetParams,
         exportTimelapse,
         exportFrames,
+        exportName,
         changed: markStateChanged,
         // Only the commented-out New exposure button calls this today; switching
         // to Live and back does the same thing in two clicks. Kept because the

@@ -201,6 +201,30 @@ canvas.exposing.held {
     color: #e5675c;
 }
 
+/* A help icon rides on its heading's line; the explanation is its title. */
+.help {
+    display: inline-block;
+    width: 1.3em;
+    height: 1.3em;
+    margin-left: .4em;
+    border: 1px solid var(--text-dim);
+    border-radius: 50%;
+    color: var(--text-dim);
+    font-size: 9px;
+    font-weight: 600;
+    line-height: calc(1.3em - 2px);
+    letter-spacing: 0;
+    text-align: center;
+    vertical-align: 1px;
+    cursor: help;
+}
+
+.help:hover, .help:focus-visible {
+    border-color: var(--text);
+    color: var(--text);
+    outline: none;
+}
+
 /* Inputs */
 
 input, select, button {

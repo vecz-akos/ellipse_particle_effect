@@ -26,6 +26,71 @@ Paragraphs, tables, lists.
 
 ---
 
+# Help icons, and the Playback and Look tabs lose their standing hints
+
+Date: 2026-09-30
+
+Task: T29, and a follow-up from using it that widened it to the Look tab.
+
+A standing hint is read a hundred times by someone who already knows it, so the
+explanations moved behind a `?` icon: `Panel.help(parent, text)`
+appends a `span.help` with the text as its `title`. No positioning code, a tab
+stop for the keyboard, one CSS rule. It rides on the line of the heading it
+explains (the `h2`, or the `p.readout` of a modulation block), never a row of
+its own.
+
+Where each Playback hint went:
+
+- **Track** `?` — the station edit lock, shortened. It is the one rule that
+  lives nowhere else.
+- **Timeline** `?` — scrubbing back does not clear the image.
+- **Dwell / Leg modulation** `?` — one sentence each, keeping the unit facts
+  (pixels, cycles per hold, cycles per leg).
+- **Removed** — "While the shared Weight slider is in charge…", which the
+  locked `w` fields and the Parameters tab already say.
+- **Stays standing** — the duration unit, the one hint that explains the control
+  right above it.
+
+**Deviation from the task: the Timelapse hint did not go entirely.** Its
+last sentence — frames are stamped as they arrive, so a slow canvas makes a
+slower film — has no other home, and T27 asked for exactly that sentence in
+the panel. It sits behind the Timelapse heading's `?`. The rest was redundant:
+the button reads "Cancel export" while recording, and the status line reports
+what happened.
+
+**The Look tab went the same way, all of it**: Colours, Bloom, Vignette, Grain,
+and Tone map with its two paragraphs joined into one tooltip. The text is
+unchanged; nothing was dropped. The Monochrome toggle's hover title was already
+a tooltip and stays. Parameters and Render keep their hints.
+
+**The Timelapse section has its own two lines now.** The task assumed a status
+line existed under the export button; it did not — progress, the `.webm`'s
+name, the cancel and the "cannot record" failure all went to the Track
+section's status line, under **Add station here**. Under the button now:
+
+- **The file name, always shown** — `n-ellipse-<seed>-<w>x<h>.webm`, from one
+  `exportName` in `main.js` that the download uses too, refreshed by
+  `Panel.setSeed` and `Panel.setCanvasSize`. A name that appeared only after
+  the export read oddly next to text that changes every frame.
+- **The status, `Panel.setExportStatus`** — only what changes: progress,
+  "Exported N frames.", the cancel, the failure. It is `hidden` until something
+  is written to it, so there is no paragraph before the first export.
+
+The guards that refuse a canvas
+drag or a key during an export still report on the Track status line, where
+every other refusal of a hand on the figure reports. A side effect: those
+refusals used to share a line with the progress counter, which overwrote them
+on the next frame; now they stay readable — and stay there after the export
+ends, until the next Track message replaces them.
+
+Verified with a throwaway fake DOM that builds the real `Panel` and dumps every
+tab's headings and paragraphs, before (HEAD) and after: Parameters and Render
+are line-for-line identical; Playback and Look lost the paragraphs above and
+gained the icons. The station list's empty-state lines ("No stations — …",
+"No point selected…") are state, not standing hints, and were left.
+
+---
+
 # The station row drops x and y
 
 Date: 2026-09-30
