@@ -1,0 +1,328 @@
+# AGENTS.md
+
+Orientation notes for AI agents working on this repo. Read `README.md` too —
+that one is user-facing; this file is the stuff that is easy to get wrong.
+
+## What this is
+
+A hobby generative-graphics sketch. Twenty thousand particles wander a canvas
+with a step length driven by their distance from an n-ellipse, so they pile up
+along the curve and trace out orbit-like, x-ray-looking images. Nothing here is
+production, there is no test suite, and the only judge of a change is what it
+looks like on screen.
+
+The output is the point. A "cleanup" that makes the code tidier and the picture
+different is a regression.
+
+## Layout
+
+```
+index.html            Vite entry point; the stage element and the canvas
+styles.css            all styling, hand-written, no framework
+vite.config.js        one setting: base "./" so builds open from the filesystem
+scripts/              the sketch — one class per file, default-exported
+bench/                the render-cost benchmark; tooling, never imported by the sketch
+docs/                 architecture, the decision log, and the roadmap
+../imgs/              reference renders, hand-edited outside this repo (not tracked here)
+```
+
+## Where documentation goes
+
+| What you are writing | Where it goes |
+| --- | --- |
+| Why something is the way it is; what was tried and broke | `docs/decisions.md` |
+| What a component is, what it owns, how pieces connect | `docs/architecture.md` |
+| Planned work, in dependency order | `docs/roadmap.md` |
+| A small follow-up task to hand to an agent | `docs/task-list.md` — open tasks only, untracked; landed ones move to `docs/task-list.archive.md` (tracked, not read while working), format in `docs/task-list.template.md` |
+| How to run or build the project | `README.md` |
+| A rule an agent must not break | this file, in one or two sentences |
+
+Rules for all of it:
+
+- **`docs/decisions.md` is newest-first and append-only at the top.** Never edit
+  an existing entry; a changed decision gets a new entry saying what it
+  supersedes.
+- **Big calls get detail, small ones get a few lines.** The file grows forever.
+- **No line-number references anywhere in the docs.** Name the file, function,
+  constant, or component instead — line references drift.
+- **Documentation is written in English**, regardless of the conversation
+  language.
+- **Keep code comments short.** A paragraph of reasoning belongs in
+  `docs/decisions.md`; the comment states the constraint in a line or two and
+  names the entry that explains it.
+
+## Conventions
+
+- **Dependencies stay minimal, split by layer.** The simulation and the canvas
+  drawing get no packages — check whether fifteen lines of arithmetic would do.
+  The UI around the canvas (export button, sliders, inputs) may use a CSS or
+  component library; Tailwind or Bootstrap are acceptable there. See the
+  "Dependencies stay minimal" entry in `docs/decisions.md`.
+- **No semicolons** in `scripts/`, and one class per file with a `default`
+  export. Match it.
+- Plain ES modules and Canvas 2D. No TypeScript, no JSX. Styling is hand-written
+  in `styles.css`; there is no CSS framework, and the panel is built from native
+  inputs.
+- **Every tunable belongs in `Params`.** The panel and the keyboard both write
+  that one object and the loop reads it; do not add a new module-level `let` in
+  `main.js` for something the user can change. Non-tunable runtime state (the
+  canvas size, the particle array, the drag target) stays in `main.js`.
+
+## Hard constraints that look arbitrary but aren't
+
+- **The step-length formula `sqrt(error + offset) * scale - bias` in
+  `Particle.update` is hand-tuned.** The defaults in `Params` (128, 8, 90) are
+  load-bearing for the look. They are editable in the panel now; do not
+  "simplify" the formula or change what the defaults are.
+- **The canvas is not the window.** Its pixel size comes from `Params.aspect`
+  and `Params.resolution`, and CSS scales it into the area beside the panel.
+  Anything reading mouse coordinates must go through `toCanvas` in `main.js`,
+  and resolution is part of the look — the same seed at another resolution is a
+  different image, not a larger one.
+- **`d` is exactly the sum of the focal-point weights.** There is no constant
+  term any more — the old `baseD` was the startup point's weight in disguise, and
+  removing it is what makes the shared weight slider a size control (`d = n·W`).
+  Do not reintroduce a term that belongs to no point.
+- **This is not simulated annealing**, despite the repository name — no energy
+  acceptance, no cooling schedule. Adding a real one would kill the effect,
+  because the system is supposed to never converge. Full explanation in
+  `docs/decisions.md`.
+- **The image is the density buffer, not the canvas.** `draw` writes no shapes:
+  it accumulates hits into `DensityBuffer` and blits one `ImageData`. The old
+  `record` flag and the per-particle alpha are gone — brightness is `exposure`
+  and `gamma` now.
+- **`DensityBuffer` writes pixels through a `Uint32Array` view, `PostProcess`
+  reads them as bytes.** Both are views of the same `ImageData`. The packed
+  32-bit write needs the endianness-aware `pack`; a per-channel multiply does
+  not, and `Uint8ClampedArray` clamps for free. Do not "unify" them on the
+  Uint32 path — that reintroduces byte-order handling and manual clamping in the
+  one place that does not need either.
+- **The animation clock counts simulation steps, not milliseconds.**
+  `Animation.advance` runs once per `step`, so pausing the exposure pauses the
+  timeline — that is deliberate, not a bug to fix. Wall-clock time would make a
+  run depend on the machine and break the reproducibility export needs. See "The
+  animation clock counts steps" in `docs/decisions.md`.
+- **A station is only editable while the timeline is stopped and the clock sits
+  exactly on it, and that lock lives in `Panel`, never in `Animation`.** The
+  model has no notion of a past and a preset restores every station regardless.
+  The lock is also what keeps a point from having two writers — a track and the
+  cursor — so do not relax it to "editable while paused anywhere". See "Stations
+  are the track" in `docs/decisions.md`. Retiming a station takes the clock with
+  it, and **a station's `t` is applied on `change`, never on `input`**: the
+  intermediate values of a number being typed would snap onto neighbours, let
+  `normalise` clamp a dwell to zero for good, and burn the figure's detour into
+  a running exposure. The other station fields update live.
+- **A modulator is a pure function of `(τ, seed, parameters)` and never touches
+  the simulation's `Random`.** Nothing in `Animation.js` holds state between
+  steps, so seeking to a step gives the same wobble as playing to it; a random
+  walk that integrates a step per frame breaks that, and a modulator that drew
+  from the simulation's stream would make the particles depend on how long the
+  animation ran. The seed is the run's seed, the track's id, the station index
+  and the slot — see "Modulators are functions of phase time" in
+  `docs/decisions.md`.
+- **One selected focal point, and it lives on `Panel` as `selectedPoint`.**
+  Clicking a point on the canvas selects it whether or not it has a track; that
+  one selection opens the track on the Playback tab, is the point follow mode
+  steers, and is ringed by the `s` overlay. It is interface state — never in
+  `Params`, never in a preset. It is an index, so `addFocalPoint` and
+  `removeFocalPoint` shift it the way they shift the tracks.
+- **While follow mode runs, the hand owns the steered point and `applyTracks`
+  skips it entirely.** Not apply-then-overwrite: that leaves the position from
+  the cursor and the weight and wobble from the plan. Both the writer in
+  `update` and the skip read one `steeredPoint()` helper — keep it that way, or
+  they will disagree. Nothing is written into the track, so switching follow off
+  restores the plan exactly. This is **not** symmetric with the dragging rule
+  above, where the track wins; a toggle is deliberate where a click may be a
+  mis-click. See "One selected focal point" in `docs/decisions.md`.
+- **`applyTracks` in `main.js` is the only place the plan and its modulation
+  compose.** Everything else — `Panel.addStation`, the station list, the canvas
+  markers — reads `Animation.at`, the plan. Copy `point.x` into a station and a
+  tremor gets frozen into it. `Animation.at` returns the phase, the station
+  index, τ, the phase's length and (on a leg) the unit tangent alongside the
+  position; read a modulator off that rather than walking the station list a
+  second time. **A modulator belongs to a phase**: a station has one slot per
+  entry of `SLOTS` (`dwell`, `leg`), each inheriting the track default of the
+  same name, and `Animation.modulatorFor` picks by `at.phase`. Loop over
+  `SLOTS`; do not name the slots one by one.
+- **`Animation.normalise` clamps every dwell to the gap before the next
+  station**, on every edit and every preset load. Without it a dwell can outrun
+  its leg and the point teleports. `Animation.at` assumes normalised input; do
+  not add a branch there to cope with un-normalised data.
+- **The timelapse export drives the one `step()` with a count; it is not a
+  second loop and not a mode.** `exportRun` in `main.js` is session state —
+  never in `Params` — and while it is set `update()` calls `exportFrame()`
+  instead of `step()`. The recorder observes the run and must not change it:
+  the density after an export is byte-identical to playing the same timeline
+  without one. Anything that would start a new exposure or move the figure
+  mid-export goes through `panel.exportLocked(...)`, the keyboard guard, or the
+  canvas guard — and the **whole Parameters tab is locked as one**, each
+  control restored to its own prior state. The Look tab stays live on purpose:
+  grading a film while it records is a feature. See "Timelapse export is a
+  special play" in `docs/decisions.md`.
+- **`Params.animation` is settings only; the transport's run state lives on the
+  `Animation` instance.** `Preset` walks every key of `Params`, so a field put
+  there is a field that gets saved — that is how a link once started the timeline
+  on open. `duration` and `loop` belong in `Params`; `playing` and `time` do not.
+  A looping clock also runs `0…duration-1`, never `duration`, because `advance`
+  wraps — `seek` and the scrub slider both respect that. See "Run state stays off
+  `Params`" in `docs/decisions.md`.
+- **Animation tracks are bound to focal points by index, and
+  `NEllipse.addFocalPoint` unshifts.** A new point takes index 0, so
+  `addFocalPoint` inserts a track at 0 and `removeFocalPoint` removes the one at
+  the same index. Rebuilding the track list from a count instead runs fine and
+  silently hands every track to its neighbour; `syncTracks` is only for the paths
+  that replace the whole figure at once.
+- **`PostProcess.apply`'s two skips are exact, and must stay exact.** A vignette
+  mask of exactly 1 and a grain cell with no speck both write back the byte that
+  is already there, which is why skipping them is byte-identical. Loosening
+  either into a tolerance (`m > 0.99`, "small enough noise") changes the image
+  and is not the same optimisation. See "The post pass does the work it cannot
+  skip" in `docs/decisions.md`.
+- **Colour work belongs in `buildTable`, never in the pixel loop.** The table is
+  indexed by density and built once per frame, so the ramp is sampled a few
+  thousand times rather than a few million. Bloom makes the index a float and is
+  answered with a truncation (`source[i]|0`), not with per-pixel `log1p`/`pow`.
+- **`render`'s white point follows what `render` is reading.** With bloom on that
+  is the summed buffer, whose maximum `Bloom.apply` returns; normalising to the
+  raw density's maximum instead clips the bright core to a flat blob. If you add
+  another effect upstream of the tone map, it owes `render` a maximum too.
+- **No `Math.random` in the simulation.** Everything random draws from the
+  single `Random` instance in `main.js` (passed into `Particle.update`), or the
+  seed stops determining the image. The one exception is `Random.randomSeed`,
+  which picks the seed itself.
+- **`particleCorrection` keeps an equal margin on every side**, one canvas by
+  default (`Params.tolerance`). Particles out there are still part of the
+  simulation; recycling them sooner tightens the image visibly. The margin used
+  to be measured from the canvas origin, which made the right and bottom edges
+  one canvas stricter than the left and top — that asymmetry was a bug, not a
+  tuning.
+
+## Gotchas already investigated
+
+- `MouseFollower` stores its listener in `this.handler` because
+  `removeEventListener` needs the same function reference — passing a fresh
+  arrow function silently removes nothing. This was a real bug; do not inline it
+  back.
+- **The two resize paths clear different things, on purpose.** Both reallocate
+  every particle. A *window* resize (`onresize`) keeps the accumulated density:
+  `DensityBuffer.resize` copies the overlapping region and recomputes `max` over
+  it, so nudging the window edge does not destroy a run that has been building
+  for minutes. Changing *aspect or resolution* from the panel (`canvasChanged`)
+  clears it, because that is a deliberate act of choosing a new pixel size and
+  the buffer's contents are resolution-specific — the step curve is tuned in
+  pixels, so old traces and new ones are drawn at different scales and blending
+  them just looks like a mistake. The same split governs the figure:
+  `canvasChanged` calls `rescaleFocalPoints` so the points keep their place in
+  the frame and their size relative to it, and `applyDefaultWeight` so newly
+  added points are sized for the canvas you are on; a window resize touches
+  neither, because the surviving density was drawn around the figure where it
+  stands. **`rescaleFocalPoints` scales the animation's stations too** — they
+  are figure, and `applyTracks` runs right after it and would otherwise write
+  the old canvas back over the points. Anything new that holds a canvas
+  coordinate belongs in that function — a modulator's amplitude is pixels, and
+  `Animation.rescale` scales it too.
+- The keyboard handler returns early when the event comes from inside `.panel`,
+  so typing a seed does not toggle modes. After changing `Params` from a
+  shortcut it calls `panel.sync()`, or the controls would show stale values.
+- **`Panel.sync()` is the whole contract for writing `Params` from outside.** It
+  rereads values, recomputes the weight slider's range, clamps `sharedWeight`
+  into it, reapplies the shared weight to the points, and locks whichever weight
+  editor is not in charge. **The shared weight is one number for every point
+  and every station**: `applySharedWeight` writes the stations too (through
+  `Animation.setWeight`), or `applyTracks` would put the stations' old weights
+  back on the next step and the Weight slider would do nothing to an animated
+  point. The station's `w` field is the third view of that number and is locked
+  with the per-point one; weight animation is what Manual mode is for, and so
+  is the weight pulse modulator — `applyTracks` adds it only under
+  `manualWeight`, and the panel locks its numbers otherwise. Add
+  panel state that `sync` does not restore and the
+  first preset loaded from a differently sized canvas will expose it. It calls
+  back into the handlers, so it must not run from the `Panel` constructor — and
+  **a handler must never call `sync()` back.** `weightChanged` calls the narrow
+  `panel.syncWeightControls()` on purpose; widening it to `panel.sync()` looks
+  like the more thorough choice and is infinite recursion.
+- **The URL hash is written on a timer, never on every change.** An edit calls
+  `markStateChanged` in `main.js`, which arms a 400 ms delay that the animation
+  loop checks; the write is a `history.replaceState`. Writing `location.hash`
+  directly is what the old seed-only code did — it adds a history entry per
+  change and would fight the state link.
+- **A preset file is untrusted input.** `Preset.apply` validates the whole
+  document before writing anything and copies only known keys of matching type.
+  Adding a `Params` field is enough for it to travel — but do not loosen the
+  checks, and keep the `SKIP` fields (`exposing`, `followFocalPoint`,
+  `showFocalPoints`) out of it.
+- **An array in `Params` needs its own branch in all three of `Preset.capture`,
+  `strip` and `apply`.** `typeof [] === "object"`, so the object paths look like
+  they cover it and quietly do not: spreading an array gives `{0: …, 1: …}`,
+  and diffing it key by key against a default of another length is nonsense.
+  `gradient` is the existing example — arrays are carried, compared and
+  validated whole.
+- **One capture, two serialisations.** `Preset.strip` runs for the URL only: a
+  link omits defaults, so it inherits whatever a default becomes later, which is
+  fine for something shared and ephemeral. The `.json` file keeps every field
+  precisely because it does not get to inherit — someone reopens it months on.
+  Do not "unify" the two by stripping the file as well.
+- **Anything the animation loop writes to the DOM has to check first.** Follow
+  mode calls `refreshFocalValues` sixty times a second and `render` looks at the
+  canvas frame classes every frame, so both go through a changed-value guard
+  (`setNumber` / `setText` in `Panel.js`, `syncCanvasFrame` in `main.js`). Do not
+  add an unconditional DOM write to a per-frame path.
+- **Stepping the exposure and redrawing the image are separate, and the redraw
+  is change-driven.** `render` runs when `needsRender` is raised, not every
+  frame, so **anything that changes what is on screen has to announce itself** —
+  through `markStateChanged` (which schedules the debounced hash write *and* the
+  repaint) for anything that is part of the saved state, or by raising the flag
+  directly for what is not, like `clearImage`. Miss one and the canvas silently
+  shows a stale image. The stepping path raises the flag **directly**: routing a
+  per-frame signal through `markStateChanged` would push the hash deadline
+  forward every frame and the URL would never be written again.
+- **A held exposure snaps the white point instead of easing it.** With nothing
+  being added, `adaptation` has nothing to smooth, and a brightness that kept
+  drifting under a repaint would make grading impossible to judge.
+- `savePng` exports an offscreen canvas built from the last `imageData`, not the
+  visible one, because `draw` strokes the focal-point crosses onto the visible
+  canvas after the blit. Anything drawn on top of the image belongs there, not in
+  the export.
+- `correctionCounter` in `update` is accumulated and unused. It is a debug hook
+  left in place deliberately; a linter will flag it.
+
+## Verifying changes
+
+```powershell
+npm run build              # catches import and syntax errors; the only static check there is
+npm run bench              # render cost, if you touched the render chain (~4 minutes)
+npm run bench -- --quick   # only checks that the benchmark still runs; numbers not comparable
+```
+
+`bench/bench.js` is the one benchmark, extended rather than copied — a folder of
+per-task harnesses is how T4's and T19's numbers became unreproducible. Its
+header states the method (warm-up count, one context per process, why the post
+pass is timed as a difference); **read it before adding a measurement**, and put
+any new figure in `docs/decisions.md` next to the ones already there. Run it
+after any change to `DensityBuffer`, `Bloom`, `PostProcess` or the render path in
+`main.js`. It drives the real modules but keeps its own copy of `step`, so a
+change to `main.js` does not break it — and does not reach it either.
+
+**Comparing two implementations is not what this benchmark is for.** It reports
+what the chain costs; between two of its runs the spread is over 10%, so a
+variant timed in one run against a baseline in another loses every effect
+smaller than that. Two of the five "this did not help" results recorded under
+T21 were wrong for exactly that reason. To compare implementations, interleave
+them in one process — every variant once per round, many rounds — where the
+spread is 1-4%, and quote it next to the number. The entry "T21's negative
+results, re-measured" in `docs/decisions.md` is the worked example, and the
+figure it corrects is a reminder that **a negative result recorded as
+"do not retry" closes a door permanently** and therefore needs the stronger
+footing, not the weaker one.
+
+There are no tests, no linter and no type checker, and none of the above will
+tell you whether the change is correct — the sketch is judged visually. **Do not
+start the dev server unasked**; the user runs `npm run dev` and looks at it. When
+you need a visual check, say what to look for (density on the curve, how quickly
+the fringe recycles, alpha build-up in accumulating mode) and let the user
+report back.
+
+## Environment
+
+Windows 11, VS Code, PowerShell as the primary shell (Bash also available).
+Node 24, npm 12. Give commands in PowerShell form.

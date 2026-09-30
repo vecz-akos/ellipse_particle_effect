@@ -1,0 +1,7 @@
+node_modules/
+dist/
+
+# The live task queue is transient scaffolding. The archive of landed tasks and
+# the format skeleton are tracked: docs/task-list.archive.md keeps the record of
+# what was asked and what was forbidden, docs/task-list.template.md the shape.
+docs/task-list.md
