@@ -137,6 +137,11 @@ rows, and `refreshFocalValues` follows a drag. `sync` is the whole contract for 
 `Params` written from outside: values, the weight slider's range, the clamped
 `sharedWeight`, which weight editor is live, and the stop list.
 
+The one piece of state it does own is **`selectedPoint`**, the app's selected
+focal point: interface state, never saved. `selectPoint` sets it from the track
+selector or from a click on the canvas, `openTrack` derives that point's track,
+and `main.js` reads it for follow mode, the ringed cross and the drawn track.
+
 ### `scripts/Preset.js`
 
 The save format. `capture` collects the seed, the `Params` fields worth keeping,
@@ -203,7 +208,7 @@ hand-written, no framework, a dark surface with one accent colour.
 ```
 requestAnimationFrame
    └─ update()
-       ├─ exposing && followFocalPoint ? focalPoints[0] ← mouse, in canvas pixels
+       ├─ steeredPoint() >= 0 ? the selected focal point ← mouse, in canvas pixels
        ├─ exportRun ? exportFrame()                ← stepsPerFrame × step(), render, capture to the hidden canvas
        ├─ else exposing ? step()                   ← and raise needsRender
        │    ├─ applyTracks()                              ← Animation.at + modulate, before anything moves

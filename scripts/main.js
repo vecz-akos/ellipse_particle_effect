@@ -174,10 +174,14 @@ const writeHash = () => {
 // The animation keeps one track per focal point, bound by position, and
 // NEllipse.addFocalPoint unshifts — so a new point takes index 0 and every
 // existing track shifts with it.
+// The selection is an index into the same list, so it shifts with the tracks
+// rather than being clamped: without this the point the user had open silently
+// becomes its neighbour.
 const addFocalPoint = (x, y, weight=null) => {
     if (weight === null && !params.manualWeight) weight = params.sharedWeight
     nEllipse.addFocalPoint(new FocalPoint(x, y), weight)
     animation.insertTrack(0)
+    if (panel && panel.selectedPoint >= 0) panel.selectPoint(panel.selectedPoint + 1)
     markStateChanged()
     if (panel) panel.syncFocalPoints()
 }
@@ -186,17 +190,33 @@ const removeFocalPoint = (index=0) => {
     const removed = index >= 0 && index < nEllipse.numberOfFocalPoints
     nEllipse.removeFocalPoint(index)
     if (removed) animation.removeTrack(index)
+    if (panel && removed && panel.selectedPoint >= 0) {
+        // The selected point itself can be the one that went.
+        if (panel.selectedPoint === index) panel.selectPoint(-1)
+        else if (panel.selectedPoint > index) panel.selectPoint(panel.selectedPoint - 1)
+    }
     markStateChanged()
     if (panel) panel.syncFocalPoints()
 }
 
+// The point the hand is steering, or -1. One helper for both readers — the
+// writer here and the skip in applyTracks — so they cannot disagree about which
+// point the cursor owns. Only while the image is being fed: on the way over to
+// the panel the cursor would otherwise drag a point across a finished picture.
+// With nothing selected it is the newest point, which is where addFocalPoint
+// puts one and what "follow" meant before the selection existed.
+const steeredPoint = () => {
+    if (!params.exposing || !params.followFocalPoint || !panel) return -1
+    const index = panel.selectedPoint >= 0 ? panel.selectedPoint : 0
+    return index < nEllipse.numberOfFocalPoints ? index : -1
+}
+
 const update = () => {
-    // Only while the image is being fed: on the way over to the panel the
-    // cursor would otherwise drag focal point 0 across a finished picture.
-    if (params.exposing && params.followFocalPoint && nEllipse.numberOfFocalPoints > 0) {
+    const steered = nEllipse.focalPoints[steeredPoint()]
+    if (steered) {
         const point = toCanvas(mf.x, mf.y)
-        nEllipse.focalPoints[0].x = point.x
-        nEllipse.focalPoints[0].y = point.y
+        steered.x = point.x
+        steered.y = point.y
         panel.refreshFocalValues()
     }
 
@@ -231,12 +251,19 @@ const update = () => {
 // This is the one place the plan and its modulation compose into a position.
 // Everything else — the station list, the canvas markers, addStation — reads
 // the plan, so a tremor never gets frozen into a station.
+// While follow mode runs, the hand owns the steered point completely and its
+// track lets go: position from the cursor, weight left where it was, no
+// modulator either, since a modulator is part of the plan. Applying the plan
+// and overwriting the position afterwards would leave half of each. Nothing is
+// written into the track, so switching follow off restores the plan exactly —
+// see "One selected focal point" in docs/decisions.md.
 const applyTracks = () => {
     if (!animation.animated) return
     const { duration, loop } = params.animation
+    const steered = steeredPoint()
     animation.tracks.forEach((track, index) => {
         const point = nEllipse.focalPoints[index]
-        if (!point) return
+        if (!point || index === steered) return
         const at = Animation.at(track, animation.time, duration, loop)
         if (!at) return
         const wobble = Animation.modulate(track, at, random.seed)
@@ -320,13 +347,21 @@ const render = () => {
         ctx.strokeStyle = gradient.top
         ctx.lineWidth = Math.max(1, Math.round(canvasScale()))
         const crossSize = 5*ctx.lineWidth
-        nEllipse.focalPoints.forEach(point => {
+        const selected = panel ? panel.selectedPoint : -1
+        nEllipse.focalPoints.forEach((point, index) => {
             ctx.beginPath()
             ctx.moveTo(point.x, point.y - crossSize)
             ctx.lineTo(point.x, point.y + crossSize)
             ctx.moveTo(point.x - crossSize, point.y)
             ctx.lineTo(point.x + crossSize, point.y)
             ctx.stroke()
+            // The selection drives the Playback tab and follow mode, so it has
+            // to be visible on the canvas too: a ring around its cross.
+            if (index === selected) {
+                ctx.beginPath()
+                ctx.arc(point.x, point.y, crossSize, 0, Math.PI*2)
+                ctx.stroke()
+            }
         })
     }
 
@@ -338,7 +373,7 @@ const render = () => {
 // blit, so — like the crosses — it never reaches an exported PNG.
 const drawTrack = (gradient) => {
     if (!panel) return
-    const track = animation.tracks[panel.selectedTrack]
+    const track = animation.tracks[panel.selectedPoint]
     if (!track || track.stations.length === 0) return
 
     const scale = Math.max(1, Math.round(canvasScale())),
@@ -698,7 +733,7 @@ const stationUnderClock = (track) =>
 // track's handles are draggable, and only the one the clock is on.
 const pickHandle = (x, y) => {
     if (!panel || animation.playing) return null
-    const track = animation.tracks[panel.selectedTrack]
+    const track = animation.tracks[panel.selectedPoint]
     const station = stationUnderClock(track)
     if (!station || !station.curve) return null
     const radius = 12*canvasScale()
@@ -747,7 +782,7 @@ window.onload = () => {
             markStateChanged()
         },
         // The open track is drawn on the canvas, so the selection is picture state.
-        trackSelected: () => { needsRender = true },
+        selectionChanged: () => { needsRender = true },
         savePng,
         savePreset,
         loadPreset,
@@ -806,8 +841,15 @@ window.onload = () => {
         draggingHandle = pickHandle(point.x, point.y)
         if (draggingHandle) return
 
+        // Empty canvas is a no-op and deliberately does not clear the selection:
+        // a mis-click would otherwise close the track that was open.
         const index = pickFocalPoint(point.x, point.y)
         if (index < 0) return
+
+        // Clicking a point selects it whether or not it has a track, whatever
+        // happens next — the selection is what follow mode steers and what the
+        // Playback tab opens.
+        if (panel.selectedPoint !== index) panel.selectPoint(index)
         const track = animation.tracks[index]
 
         // A point with no track is the normal case, and the by-hand workflow is
@@ -816,8 +858,6 @@ window.onload = () => {
             dragging = index
             return
         }
-        // Clicking an animated point opens its track, whatever happens next.
-        if (panel.selectedTrack !== index) panel.selectTrack(index)
 
         if (animation.playing) {
             panel.setPlaybackStatus("The timeline is running — stop it to move a station.", true)

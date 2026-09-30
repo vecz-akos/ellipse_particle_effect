@@ -250,11 +250,28 @@ Phase 5, which is what will trigger it.
 
 ---
 
-## Phase 5 — Focal-point animation and playback
+## Phase 5 — Focal-point animation and playback — **done**
 
-The furthest out, and the most open-ended. Rewritten after Phase 4: the earlier
-version was drafted before the exposure and the redraw were separated, and half
-of what it left unresolved is now already built.
+**The phase is finished on its own terms: a focal point's movement is data
+rather than a gesture, and a seed plus a set of tracks is a reproducible film
+that can be exported as one.**
+
+What landed, with the entries in `docs/decisions.md` that explain each: the
+**timeline on a step-counted clock** (T23, T23b), **stations, legs and dwells**
+with the editing rules that keep a point to one writer (T24), **modulators as
+pure functions of phase time** on dwells (T25), counted in **waves per phase**
+(T25b) and then on legs with the sine across the leg's normal (T26), and the
+**timelapse export** as a special play rather than a mode (T27, T27b).
+
+Two things the phase decided *not* to do, both recorded below: focal points do
+not appear or disappear on a timeline, and the live/export split did not turn
+out to be needed. One thing it deliberately deferred: the **step-curve
+constants** on the timeline — the strongest remaining knob and the easiest to
+wreck the look with, so it stays its own decision.
+
+The original plan follows, for context. It was rewritten once after Phase 4 —
+the first version was drafted before the exposure and the redraw were separated,
+and half of what it left unresolved was already built by the time it was read.
 
 ### Why it exists
 
@@ -397,14 +414,16 @@ its own decision with its own entry, not a detail of path work.
 
 ### The Playback tab
 
-**Built (T23, T23b, T24, T25, T25b, T26).** Duration, play/pause, loop or
-one-shot and a scrub are on the tab, and below them the open point's track: the
-track's default Dwell and Leg modulation, a station list with times, positions,
-weights, dwells and per-station overrides for both slots, a mini time bar, a
-curve toggle per leg, and stations draggable on the canvas. The clock counts
-simulation steps rather than milliseconds, so pausing the exposure pauses the
-timeline. See "The animation clock counts steps", "Stations are the track",
-"Modulators are functions of phase time" and "A modulator belongs to a phase" in
+**Built (T23, T23b, T24, T25, T25b, T26, T28).** Duration, play/pause, loop or
+one-shot and a scrub are on the tab, and below them the selected point's track:
+the track's default Dwell and Leg modulation, a station list with times,
+weights, dwells and per-station overrides for both slots, a sticky mini time
+bar, a curve toggle per leg, and stations draggable on the canvas — which is
+where a station's *position* is set, the row having dropped its x and y. The
+clock counts simulation steps rather than milliseconds, so pausing the exposure
+pauses the timeline. See "The animation clock counts steps", "Stations are the
+track", "Modulators are functions of phase time", "A modulator belongs to a
+phase", "One selected focal point" and "The station row drops x and y" in
 `docs/decisions.md`.
 
 **It stays in the right-hand panel. There is no timeline strip along the bottom

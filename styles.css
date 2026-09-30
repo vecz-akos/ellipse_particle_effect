@@ -9,6 +9,9 @@
     --text: #e6e7ea;
     --text-dim: #9a9da6;
     --accent: #d9822b;
+    /* The accent at a fraction of itself, for an affordance that has to be
+       visible without competing with the real state it hints at. */
+    --accent-dim: #6b4418;
     --exposing: #e5443a;
 }
 
@@ -310,10 +313,20 @@ button.wide {
 /* Playback: the track's stations, and the strip that gives back the one thing
    an ordered list cannot show — proportion. */
 
+/* The bar is worth reading while the station list is scrolled, so it sticks to
+   the top of its section. The wrapper is what sticks: it carries the opaque
+   background the rows pass under, which the bar's own margins would leak. */
+.mini-bar-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: .35rem 0;
+    background: var(--surface-raised);
+}
+
 .mini-bar {
     position: relative;
     height: 16px;
-    margin: .4rem 0;
     border: 1px solid var(--border);
     border-radius: 2px;
     background: var(--surface);
@@ -346,9 +359,25 @@ button.wide {
     background: var(--text);
 }
 
+/* The row seeks to its station, so it has to read as a target: a left border,
+   accented on the row the clock is sitting on and lit on hover. The gutter is
+   wide enough to be aimed at, because the rest of the row is mostly fields and
+   a click on one of those is an edit, not a seek. */
 .station-row {
-    padding: .35rem 0;
+    padding: .35rem 0 .35rem .9rem;
     border-top: 1px solid var(--border);
+    border-left: 3px solid var(--border);
+    cursor: pointer;
+}
+
+.station-row:hover {
+    border-left-color: var(--accent-dim);
+}
+
+/* Where the clock is, which outranks the hover hint. */
+.station-row.current,
+.station-row.current:hover {
+    border-left-color: var(--accent);
 }
 
 /* Behind the clock: shown, never editable. */
@@ -356,11 +385,26 @@ button.wide {
     opacity: .45;
 }
 
+/* The controls in the row are not part of the target. */
+.station-row input,
+.station-row select,
+.station-row label {
+    cursor: auto;
+}
+
+/* The time leads the row, then the station's name, then the remove button. */
 .station-head {
     display: flex;
+    align-items: center;
     justify-content: space-between;
     gap: .3rem;
     margin-bottom: .25rem;
+}
+
+/* Narrow and fixed: it is one number, and the name beside it takes the rest. */
+.station-head .station-field {
+    flex: none;
+    width: 4.6rem;
 }
 
 .station-time {
@@ -371,16 +415,11 @@ button.wide {
     font-size: 11px;
 }
 
-/* Two rows: t x y above, w and hold below — five in a row was too tight to read. */
+/* What is left once the position is dragged rather than typed: w and hold. */
 .station-fields {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: .25rem;
-}
-
-.station-fields + .station-fields {
     grid-template-columns: 1fr 1fr;
-    margin-top: .25rem;
+    gap: .25rem;
 }
 
 /* A modulator's form: the kind, then its numbers two to a row. The same form

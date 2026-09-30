@@ -120,6 +120,20 @@ Rules for all of it:
   animation ran. The seed is the run's seed, the track's id, the station index
   and the slot — see "Modulators are functions of phase time" in
   `docs/decisions.md`.
+- **One selected focal point, and it lives on `Panel` as `selectedPoint`.**
+  Clicking a point on the canvas selects it whether or not it has a track; that
+  one selection opens the track on the Playback tab, is the point follow mode
+  steers, and is ringed by the `s` overlay. It is interface state — never in
+  `Params`, never in a preset. It is an index, so `addFocalPoint` and
+  `removeFocalPoint` shift it the way they shift the tracks.
+- **While follow mode runs, the hand owns the steered point and `applyTracks`
+  skips it entirely.** Not apply-then-overwrite: that leaves the position from
+  the cursor and the weight and wobble from the plan. Both the writer in
+  `update` and the skip read one `steeredPoint()` helper — keep it that way, or
+  they will disagree. Nothing is written into the track, so switching follow off
+  restores the plan exactly. This is **not** symmetric with the dragging rule
+  above, where the track wins; a toggle is deliberate where a click may be a
+  mis-click. See "One selected focal point" in `docs/decisions.md`.
 - **`applyTracks` in `main.js` is the only place the plan and its modulation
   compose.** Everything else — `Panel.addStation`, the station list, the canvas
   markers — reads `Animation.at`, the plan. Copy `point.x` into a station and a

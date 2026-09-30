@@ -521,12 +521,12 @@ export default class Panel {
         this.toggleButton(overlays, "Foci (s)", {
             read: () => params.showFocalPoints,
             write: (v) => params.showFocalPoints = v,
-            hint: "Show a cross at each focal point (s)"
+            hint: "Show a cross at each focal point, ringed on the selected one (s)"
         })
         this.toggleButton(overlays, "Follow (f)", {
             read: () => params.followFocalPoint,
             write: (v) => params.followFocalPoint = v,
-            hint: "The newest focal point follows the mouse while the exposure runs (f)"
+            hint: "The selected point follows the mouse while the exposure runs; its track lets go of it meanwhile, and switching this off snaps it back to where the plan puts it — which draws a line into the exposure (f)"
         })
 
         footer.appendChild(overlays)
@@ -674,21 +674,42 @@ export default class Panel {
         section.appendChild(el("p", "hint", "Starts a new exposure and plays the timeline from the start, recording every frame without the overlay; the finished image stays on the canvas, paused. Press again to cancel. Frames are stamped as they arrive, so a slow canvas makes a slower film, never a dropped frame."))
     }
 
-    // One track open at a time, chosen here or by clicking the point on the
-    // canvas. Four levels of accordion would be unusable in a narrow column —
-    // see "The Playback tab" in docs/roadmap.md.
+    // One point selected at a time, chosen here or by clicking it on the canvas.
+    // That one selection is the whole app's: it opens the track here and it is
+    // the point follow mode steers — see "One selected focal point" in
+    // docs/decisions.md. Four levels of accordion would be unusable in a narrow
+    // column, hence selection rather than nesting — see "The Playback tab" in
+    // docs/roadmap.md.
     buildTrack(body) {
         const section = this.section(body, "Track")
 
         this.trackSelect = el("select")
         this.trackSelect.addEventListener("change", () => {
-            this.selectTrack(Number(this.trackSelect.value))
+            this.selectPoint(Number(this.trackSelect.value))
         })
         this.row(section, "Point", this.trackSelect)
 
+        // The one control still worth reading once the station list is scrolled,
+        // so it sticks to the top of the section; the wrapper is what carries the
+        // background the rows pass under.
+        const sticky = el("div", "mini-bar-sticky")
         this.miniBar = el("div", "mini-bar")
-        this.miniBar.addEventListener("mousedown", (event) => this.seekFromMiniBar(event))
-        section.appendChild(this.miniBar)
+        this.miniBar.addEventListener("mousedown", (event) => {
+            this.seekFromMiniBar(event)
+            // Captured on the window rather than the strip: it is sixteen pixels
+            // tall, and the cursor leaves it at the first flick of the wrist.
+            // The same references go to removeEventListener — see the
+            // MouseFollower gotcha in AGENTS.md.
+            const drag = (moved) => this.seekFromMiniBar(moved)
+            const drop = () => {
+                window.removeEventListener("mousemove", drag)
+                window.removeEventListener("mouseup", drop)
+            }
+            window.addEventListener("mousemove", drag)
+            window.addEventListener("mouseup", drop)
+        })
+        sticky.appendChild(this.miniBar)
+        section.appendChild(sticky)
 
         // The track's default modulation, which its stations inherit. One slot
         // today; T26 adds the leg's beside it.
@@ -705,10 +726,10 @@ export default class Panel {
 
         this.playbackStatus = el("p", "hint", "")
         section.appendChild(this.playbackStatus)
-        section.appendChild(el("p", "hint", "A station can only be edited while the timeline is stopped and the clock sits exactly on it — click a station's step number to go there. What the exposure has already burned in cannot be un-burned."))
+        section.appendChild(el("p", "hint", "A station can only be edited while the timeline is stopped and the clock sits exactly on it — click a row, away from its fields, to go there. What the exposure has already burned in cannot be un-burned."))
         section.appendChild(el("p", "hint", "While the shared Weight slider is in charge it sizes every station too; turn Manual on (Parameters tab) to animate a point's weight."))
 
-        this.selectedTrack = -1
+        this.selectedPoint = -1
         this.syncTracks()
     }
 
@@ -716,8 +737,8 @@ export default class Panel {
     // change only when the figure or the plan does, never per frame.
     syncTracks() {
         const points = this.nEllipse.focalPoints
-        if (this.selectedTrack >= points.length) this.selectedTrack = points.length - 1
-        if (points.length === 0) this.selectedTrack = -1
+        if (this.selectedPoint >= points.length) this.selectedPoint = points.length - 1
+        if (points.length === 0) this.selectedPoint = -1
 
         this.trackSelect.textContent = ""
         const none = el("option", null, points.length === 0 ? "No focal points" : "None")
@@ -731,23 +752,24 @@ export default class Panel {
             option.value = String(index)
             this.trackSelect.appendChild(option)
         })
-        this.trackSelect.value = String(this.selectedTrack)
+        this.trackSelect.value = String(this.selectedPoint)
         this.trackSelect.disabled = points.length === 0
 
         this.syncStations()
     }
 
-    selectTrack(index) {
+    selectPoint(index) {
         const points = this.nEllipse.focalPoints.length
-        this.selectedTrack = index >= 0 && index < points ? index : -1
-        this.trackSelect.value = String(this.selectedTrack)
+        this.selectedPoint = index >= 0 && index < points ? index : -1
+        this.trackSelect.value = String(this.selectedPoint)
         this.syncStations()
-        // The canvas draws the open track, so the selection changes the picture.
-        if (this.handlers.trackSelected) this.handlers.trackSelected()
+        // The canvas draws the open track and marks the selected point, so the
+        // selection changes the picture.
+        if (this.handlers.selectionChanged) this.handlers.selectionChanged()
     }
 
     get openTrack() {
-        return this.animation.tracks[this.selectedTrack] || null
+        return this.animation.tracks[this.selectedPoint] || null
     }
 
     // A station is editable only while the timeline is stopped and the clock is
@@ -760,7 +782,7 @@ export default class Panel {
 
     addStation() {
         const track = this.openTrack
-        const point = this.nEllipse.focalPoints[this.selectedTrack]
+        const point = this.nEllipse.focalPoints[this.selectedPoint]
         if (!track || !point) return
         if (this.animation.playing) {
             this.setPlaybackStatus("Stop the timeline before editing a track.", true)
@@ -1019,8 +1041,28 @@ export default class Panel {
         const span = Math.max(1, Math.round(this.params.animation.duration))
         track.stations.forEach((station, index) => {
             const row = el("div", "station-row")
+            // The whole row is the way back to a station — the step number
+            // alone was too small a target. The row is full of controls, so a
+            // click that lands on one is not a seek: typing a number must not
+            // move the clock, and the × must not seek to the station it is
+            // removing. Same shape as the keyboard handler's `.panel` guard.
+            row.addEventListener("click", (event) => {
+                if (event.target.closest("input, select, button")) return
+                // A label around a checkbox toggles it, so seeking there would
+                // be two actions from one click; one around a number field only
+                // moves focus, and its letter is target the row can spare.
+                const label = event.target.closest("label")
+                if (label && [...label.children].some(node => node.type === "checkbox")) return
+                this.seekTo(station.time)
+            })
 
+            // When, then which station, then away with it. The time leads the
+            // row because it is what orders the list — see "The station row
+            // drops x and y" in docs/decisions.md.
             const head = el("div", "station-head")
+            const inputs = {
+                time: this.stationField(head, "t", station, "time", { min: 0 })
+            }
             // The way back to a locked station: seeking here unlocks it.
             const at = el("button", "station-time", `${index + 1}. step ${Math.round(station.time)}`)
             at.title = "Move the clock to this station"
@@ -1032,19 +1074,12 @@ export default class Panel {
             head.appendChild(remove)
             row.appendChild(head)
 
-            // Where and when on the first row, how much and how long on the
-            // second — five fields across was too tight to read.
-            const where = el("div", "station-fields")
-            const howLong = el("div", "station-fields")
-            const inputs = {
-                time: this.stationField(where, "t", station, "time", { min: 0 }),
-                x: this.stationField(where, "x", station, "x"),
-                y: this.stationField(where, "y", station, "y"),
-                weight: this.stationField(howLong, "w", station, "weight", { step: 10 }),
-                dwell: this.stationField(howLong, "hold", station, "dwell", { step: 10, min: 0 })
-            }
-            row.appendChild(where)
-            row.appendChild(howLong)
+            // A station's position is dragged on the canvas, not typed: how
+            // much and how long are what is left to read here.
+            const fields = el("div", "station-fields")
+            inputs.weight = this.stationField(fields, "w", station, "weight", { step: 10 })
+            inputs.dwell = this.stationField(fields, "hold", station, "dwell", { step: 10, min: 0 })
+            row.appendChild(fields)
 
             // The station's own dwell modulator sits under the hold; the leg's
             // under the leg row below, since the leg is what leaves here.
@@ -1092,14 +1127,19 @@ export default class Panel {
     syncStationLocks(force=false) {
         if (!this.stationRows) return
         const shared = !this.params.manualWeight
+        // `current` is where the clock sits, which a playing timeline still has
+        // even though every row is locked then — so both flags go into the
+        // signature, or the accent would stop following the clock while it runs.
         const signature = (shared ? "s" : "m") + (this.animation.playing ? "p" : "-")
-            + this.stationRows.map(({ station }) => this.stationLocked(station) ? "1" : "0").join("")
+            + this.stationRows.map(({ station }) =>
+                `${this.stationLocked(station) ? "1" : "0"}${this.animation.time === station.time ? "c" : "-"}`).join("")
         if (!force && signature === this.shownLocks) return
         this.shownLocks = signature
 
         this.stationRows.forEach(({ row, inputs, curve, station }) => {
             const locked = this.stationLocked(station)
             row.classList.toggle("locked", locked)
+            row.classList.toggle("current", this.animation.time === station.time)
             for (const input of Object.values(inputs)) input.disabled = locked
             inputs.weight.disabled = locked || shared
             curve.disabled = locked
@@ -1161,7 +1201,11 @@ export default class Panel {
         this.seekTo(this.snapTime(raw, null))
     }
 
+    // Every seek the tab offers goes through here — the scrub, the mini bar, a
+    // station row — so one guard keeps them all off a running export, which the
+    // disabled scrub slider alone would not (the bar and the rows are divs).
     seekTo(time) {
+        if (this.exporting) return
         this.animation.seek(time, this.params.animation.duration, this.params.animation.loop)
         this.refreshTransport()
         if (this.handlers.timelineSeeked) this.handlers.timelineSeeked()
@@ -1189,13 +1233,13 @@ export default class Panel {
         this.playbackStatus.classList.toggle("failed", failed)
     }
 
-    // The canvas moved a station or a handle: the numbers follow without
-    // rebuilding the rows, which would pull the cursor out of a field.
+    // The shared weight or a canvas drag changed a station: the numbers the row
+    // still shows follow without rebuilding it, which would pull the cursor out
+    // of a field. A drag moves x and y, which the row no longer prints — the
+    // canvas is where that is read now.
     refreshStationValues() {
         if (!this.stationRows) return
         for (const { inputs, station } of this.stationRows) {
-            setNumber(inputs.x, station.x)
-            setNumber(inputs.y, station.y)
             setNumber(inputs.weight, station.weight)
         }
     }

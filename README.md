@@ -79,10 +79,10 @@ Keyboard shortcuts stay the fast path, and the panel follows them.
 | --- | --- |
 | `space` | pause / resume the exposure |
 | `e` | switch between Live and Exposure |
-| `s` | show / hide a cross at each focal point |
+| `s` | show / hide a cross at each focal point, ringed on the selected one |
 | `+` or `a` | add a focal point at the cursor |
 | `-` or `x` | remove the most recently added focal point |
-| `f` | make the newest focal point follow the mouse |
+| `f` | make the selected focal point follow the mouse |
 | `r` | roll a new seed and start a new exposure |
 
 **Live** draws every frame from where the particles are right now. **Exposure**
@@ -100,6 +100,21 @@ collected. While the exposure is paused a focal point set to follow the mouse
 stops following, so moving the cursor over to the panel cannot smear the picture
 you just finished.
 
+## The selected point
+
+Clicking a focal point on the canvas selects it, whether or not it has a track,
+and one selection serves the whole app: the **Playback** tab opens that point's
+track, `f` makes *that* point follow the mouse, and with `s` on its cross is
+ringed. Clicking empty canvas changes nothing, so a mis-click cannot close the
+track you had open.
+
+While follow mode is on, the hand owns the selected point outright — if it has a
+track, the track lets go of it for as long as you are steering, and the other
+points keep moving along theirs. Nothing is recorded into the track, so
+switching follow off puts the point back exactly where its plan says at the
+current step. That snap draws a line into a running exposure; pause first if you
+do not want one.
+
 ## Moving a focal point on a timeline
 
 Dragging a point while the exposure runs is the fast way to steer the image, and
@@ -114,11 +129,18 @@ as well as move. **Hold** is how long it stands still at a station, and it is
 where the image gets its bright structure: without holds a moving focus draws an
 even smear.
 
+A station's row carries its step `t`, its weight `w` and its `hold`. Its
+**position is not in the row** — drag the station on the canvas instead, which
+is the same gesture as moving a point and reads better than typing pixels.
+
 Two rules that will look like restrictions and are not:
 
 - **You can only edit a station while the timeline is stopped and the clock is
-  sitting exactly on it.** Click a station's step number to go there. Retiming
-  a station takes the clock with it, so its `t` can be edited without losing it.
+  sitting exactly on it.** Click anywhere in a station's row, away from its
+  fields, to go there — the row with the accented left border is the one the
+  clock is on. Retiming a station takes the clock with it, so its `t` can be
+  edited without losing it. The strip above the list can also be dragged to
+  scrub, and it stays put while the list scrolls.
 - **Scrubbing back does not erase anything.** What the exposure has already
   burned in cannot be un-burned, so the panel refuses to rewrite a station you
   have already run past rather than letting the plan and the picture disagree.

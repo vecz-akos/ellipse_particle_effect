@@ -1710,3 +1710,122 @@ matters, the `docs/decisions.md` entry says so.
 - The Look tab still works during an export.
 - The exported file's last frame is the image left on the canvas, verified by
   scrubbing to the end, and the entry says so.
+
+---
+
+## T28 — One selected focal point, and three fixes to the Playback tab
+
+- **Kind:** feature
+- **Roadmap:** Phase 5 addendum
+- **Touches:** `scripts/main.js`, `scripts/Panel.js`, `styles.css`
+- **Status:** done — see "One selected focal point, and the hand wins over the track" in `docs/decisions.md`
+- **Blocked by:** —
+
+**Prompt**
+
+> Four changes from using the Playback tab. The first is the substantial one and
+> the other three are small; the first is also the only one that changes
+> behaviour outside the tab.
+>
+> **1. A selected focal point, shared by the whole app.** Clicking a point on
+> the canvas should select it, and that one selection should drive both **follow
+> mode** and the **open track** on the Playback tab.
+>
+> Today the selection is `Panel.selectedTrack` — panel state, only set when the
+> clicked point already *has* a track, because a point with no track falls
+> straight through to plain dragging. And follow mode does not consult it at
+> all: `update` in `main.js` writes `nEllipse.focalPoints[0]` from the cursor,
+> hard-coded. So the two ideas have to be joined, and the selection has to move
+> to where both readers can see it. It stays **interface state, not `Params`** —
+> the same category as `showFocalPoints`, deliberately not saved.
+>
+> Clicking a point selects it whether or not it has a track; clicking empty
+> canvas is the existing no-op (do not clear the selection on it — a
+> mis-click would lose the open track). `s`-mode crosses should show which point
+> is selected.
+>
+> **The existing bug this uncovers, confirmed in use:** follow mode writes point
+> 0's position every frame in `update`, and `applyTracks` writes every animated
+> point's position every `step` — which runs after it, in the same frame. So on a
+> point that has stations, follow mode already does nothing at all, silently.
+>
+> **The resolution: while follow mode is on, the hand owns the selected point
+> completely, and the track lets go of it.** Freehand steering is the feature
+> this project is actually for, and it has to keep working on any point. So
+> `applyTracks` **skips the selected point entirely** while `followFocalPoint`
+> is on and the exposure is running — not apply-then-overwrite, which would
+> leave a half-state where the position came from the cursor and the weight from
+> the plan. The hand takes the whole point: position from the cursor, weight left
+> where it was, modulators not applied either, since a modulator is part of the
+> plan.
+>
+> Four rules that go with it:
+>
+> - **Only the selected point.** Every other animated point keeps following its
+>   own track while you steer this one.
+> - **Nothing is written into the track.** Follow mode overrides the output, not
+>   the data, so switching it off restores the plan exactly and the film stays
+>   reproducible. Do not "helpfully" record the gesture into stations — that is
+>   T24's job and the user's decision.
+> - **Switching follow off snaps the point back** to wherever the plan puts it at
+>   the current step, and that snap draws a line into a running exposure. It is
+>   expected rather than a bug; say so where the toggle is, in a sentence.
+> - The station edit lock is untouched: follow mode does not edit stations.
+>
+> **This is deliberately not symmetric with T24's dragging rule**, where a track
+> wins and the hand is refused. Dragging is a click that could be a mis-click;
+> follow mode is a toggle the user turned on for one point on purpose. The
+> asymmetry is the point — record it in the entry so it is not "fixed" later.
+>
+> **Do not give every point a track with one station at time 0 instead.** It
+> looks like it would simplify this and it does the opposite: `Animation.at`
+> returning `null` for an empty track is what means "this point stands where you
+> left it", so a station at 0 would have `applyTracks` write that position back
+> over every plain drag; a station is only editable with the clock sitting on it,
+> so dragging would be refused at every step but 0; `animation.animated` would be
+> true always, so every link and preset would carry one meaningless station per
+> point and `applyTracks` would always run. **No track is the normal state** —
+> `AGENTS.md` and `README.md` both promise it.
+>
+> **2. The mini bar sticks to the top of the Track section.** It is the one
+> control that stays useful while the station list is scrolled, and right now it
+> scrolls away with everything else. `position: sticky` with a background that
+> covers the rows passing under it.
+>
+> **3. The mini bar scrubs on drag, not only on click.** It has a `mousedown`
+> that seeks once. Add the `mousemove`/`mouseup` half so holding the button
+> drags the playhead — pointer capture on the window, not on the element, or
+> the drag dies the moment the cursor leaves the 16-pixel strip. It goes through
+> the same seek path, so it stays snapped to stations and still repaints.
+>
+> **4. A whole station row is the click target for going to it.** Having to hit
+> the small `station-time` button in the head is the most-reported annoyance.
+> Make a click anywhere in the row seek to that station — and make it *look*
+> clickable: a left border on the row, accented for the station the clock is on
+> and dim otherwise, with a pointer cursor. The row already carries a `locked`
+> class; a `current` class alongside it is the natural place for the accent.
+>
+> The trap: the row is full of controls. A click that lands on an `input`, a
+> `select`, a checkbox, a label or the `×` must **not** seek — check the event
+> target and return, the way the keyboard handler already skips events from
+> inside `.panel`. Typing in a field must not move the clock, and removing a
+> station must not seek to the station being removed.
+>
+> **Not in this task:** any other Playback layout change. More are coming from
+> use and will be their own tasks.
+
+**Done when**
+
+- Clicking any focal point on the canvas opens its track on the Playback tab,
+  whether or not it has stations.
+- Follow mode follows the selected point, not point 0, and works on a point
+  that has stations — the cursor drives it and the track does not fight back.
+- Switching follow off puts that point back exactly where its plan says, with
+  the track's data unchanged.
+- The selection survives a mis-click on empty canvas and is not written to a
+  preset or the URL.
+- The mini bar stays visible while the station list scrolls, and dragging on it
+  scrubs continuously, including when the cursor leaves the strip.
+- Clicking anywhere in a station row that is not a control seeks to that
+  station; clicking its fields, its checkboxes and its `×` does not.
+- A station row looks clickable, and the row the clock is on is marked.

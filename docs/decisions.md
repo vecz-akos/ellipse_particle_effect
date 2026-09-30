@@ -26,6 +26,130 @@ Paragraphs, tables, lists.
 
 ---
 
+# The station row drops x and y
+
+Date: 2026-09-30
+
+A station's `x` and `y` number fields are gone from the Playback tab, and its
+`t` has moved up into the row's head, ahead of the `1. step 300` name. What the
+row prints now is **when, how much and how long** — `t`, `w`, `hold` — and one
+fields grid instead of two.
+
+The reason is that the position has a better editor: **the canvas.** Dragging a
+station is the same gesture as moving a focal point, it is available under
+exactly the same condition the fields were (the timeline stopped and the clock
+on the station — see "Stations are the track"), and it shows the figure the
+position belongs to, which four digits in a narrow column never did. Two number
+fields per row also cost most of the row's width, which is what made the
+click-to-seek target from "One selected focal point" feel unreliable.
+
+`t` leads the row because it is the one number that **orders the list**, and the
+list is the track. It keeps everything T24c gave it: applied on `change` rather
+than per keystroke, snapping to other tracks' station times, and taking the
+clock with it so the field does not lock under the cursor.
+
+**What this gives up, deliberately:** typing an exact pixel coordinate for a
+station. Nothing becomes unreachable — the drag has the same availability the
+fields had — but a position can no longer be matched numerically between two
+stations. If that is ever wanted back, it is a readout next to the drag rather
+than the two fields returning; `refreshStationValues` used to exist to keep
+those fields in step with a drag and now only carries the weight.
+
+---
+
+# One selected focal point, and the hand wins over the track
+
+Date: 2026-09-30
+
+T28. The app had two ideas of "the point you are working on" and they did not
+speak: the Playback tab's open track, set only when the clicked point already
+had stations, and follow mode, which wrote `focalPoints[0]` from the cursor
+regardless. They are now one **selected focal point**, `Panel.selectedPoint`:
+clicking a point on the canvas selects it whether or not it has a track, the
+Playback tab opens that point's track, follow mode steers that point, and with
+the `s` overlay on its cross is ringed. It stays **interface state** — the same
+category as `showFocalPoints`, never in `Params`, never in a preset or a link.
+Clicking empty canvas is still a no-op and deliberately does not clear it: a
+mis-click would otherwise close the track you had open. The field used to be
+called `selectedTrack`, which stopped being true the moment a trackless point
+could be selected.
+
+**The selection shifts with the figure.** It is an index into the focal-point
+list, and `NEllipse.addFocalPoint` unshifts, so `addFocalPoint` raises it by one
+and `removeFocalPoint` lowers it — or clears it when the selected point is the
+one that went. Clamping alone, which is all `syncTracks` did, silently handed the
+open track to a neighbour. Same rule the tracks themselves follow.
+
+**The bug this uncovered: follow mode did nothing on an animated point.** The
+cursor's write happened in `update`, and `applyTracks` ran in `step()` — later in
+the same frame — putting the plan straight back over it. Silently, with no
+symptom other than a point that would not move.
+
+**The resolution: while follow mode runs, the hand owns the point completely and
+its track lets go of it.** `applyTracks` **skips** the steered point rather than
+applying the plan and letting the cursor overwrite the position afterwards: that
+would leave half of each, the position from the hand and the weight (and the
+modulator wobble) from the plan. The hand takes the whole point — position from
+the cursor, weight left where it was, no modulation. Both readers, the writer in
+`update` and the skip in `applyTracks`, come off one `steeredPoint()` helper, so
+they cannot disagree about which point the cursor owns. With nothing selected it
+is the newest point, index 0, which is what "follow" meant before a selection
+existed.
+
+**Nothing is written into the track.** Follow mode overrides the output, not the
+data, so switching it off restores the plan exactly and the film stays
+reproducible. Recording the gesture into stations would be a different feature
+and the user's decision, not a helpful side effect. Switching follow off does
+snap the point back to wherever the plan puts it at the current step, and that
+snap draws a line into a running exposure — expected, and the toggle's hint says
+so.
+
+**This is deliberately not symmetric with the dragging rule** from "Stations are
+the track", where the track wins and the hand is refused mid-leg. Dragging
+starts with a click that could be a mis-click; follow mode is a toggle turned on
+for one point on purpose. Do not "fix" the asymmetry.
+
+**Rejected: giving every point a track with one station at time 0.** It looks
+like it would make the two paths uniform and it breaks three things at once.
+`Animation.at` returning `null` for an empty track is precisely what means "this
+point stands where you left it", so a station at 0 would have `applyTracks`
+write that position back over every plain drag; a station is only editable with
+the clock on it, so dragging would be refused at every step but 0; and
+`animation.animated` would be true always, so every link would carry one
+meaningless station per point. **No track is the normal state** — `AGENTS.md` and
+`README.md` both promise it.
+
+**Three smaller things from the same session of use.** The mini bar sticks to
+the top of the Track section (`position: sticky` on a wrapper, which is what
+carries the opaque background the rows pass under — the bar's own margins would
+leak). It scrubs on drag, with the `mousemove`/`mouseup` pair on the **window**
+rather than the strip, or the drag dies the moment the cursor leaves sixteen
+pixels of height. And a click anywhere in a station row seeks to that station,
+the small step-number button having been the most-reported annoyance; the row is
+full of controls, so a click landing on an `input`, `select` or `button` returns
+instead — typing a number must not move the clock and the `×` must not seek to
+the station it is removing. The row the clock sits on gets a `current` class and
+an accented left border; both flags go into `syncStationLocks`' signature, since
+a playing timeline locks every row but still sits on one.
+
+**What "the whole row" needed to become believable.** A row is mostly fields, so
+the first version left only the thin gaps between them live, which in use read
+as "it works sometimes". Two changes fixed that without taking the guard apart.
+The row's **left gutter is wide enough to aim at** (a 3 px border plus .9rem of
+padding) and lights up in a dim accent **on hover**, so there is one place that
+always means "go here" and says so before the click; `current` outranks the
+hover, since where the clock is matters more than where the cursor is. And a
+**label only blocks the seek when it wraps a checkbox** — clicking such a label
+toggles the box, and one click may not do two things; a label around a number
+field merely moves focus, so the letter that names the field is target the row
+can spare.
+
+All of it now goes through `seekTo`, which is also where one guard keeps every
+seek off a running export — the disabled scrub slider could not, because the
+mini bar and the station rows are divs.
+
+---
+
 # Timelapse export is a special play, not a mode
 
 Date: 2026-09-13
