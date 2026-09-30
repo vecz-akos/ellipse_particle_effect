@@ -292,7 +292,7 @@ button.wide {
 
 /* Focal points */
 
-.focal-list, .stop-list {
+.focal-list {
     display: flex;
     flex-direction: column;
     gap: .3rem;
@@ -305,11 +305,47 @@ button.wide {
     gap: .3rem;
 }
 
-/* Position, colour, remove — the swatch takes what the number does not need. */
+/* The ramp itself. The side margin is half a dot, so a stop at 0 or 1 still
+   sits wholly inside the panel. */
+.ramp {
+    margin: .3rem 7px .6rem;
+}
+
+.ramp-strip {
+    position: relative;
+    height: 18px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    cursor: copy;
+}
+
+.ramp-dot {
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    margin: -6px 0 0 -6px;
+    border: 2px solid var(--text);
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .6);
+    cursor: ew-resize;
+}
+
+.ramp-dot.selected {
+    width: 16px;
+    height: 16px;
+    margin: -8px 0 0 -8px;
+    border-color: var(--accent);
+    z-index: 1;
+}
+
+/* The selected stop: colour, position, remove — the swatch takes what the
+   number does not need. */
 .stop-row {
     display: grid;
-    grid-template-columns: 4rem 1fr auto;
+    grid-template-columns: 1fr 4rem auto;
     gap: .3rem;
+    margin-bottom: .5rem;
 }
 
 .stop-row input[type="number"] {

@@ -214,6 +214,11 @@ stops give the plain white → black default; add a couple more and a
 black → orange → white grading is a setting rather than something done
 afterwards in an image editor.
 
+The ramp is shown as a strip with a dot per stop: drag a dot to move its stop,
+click one to edit its colour and exact position underneath, and double-click the
+strip (or press **Add stop**) to add one — in the colour the ramp already has
+there, so nothing changes until you move it.
+
 The stop at `0` doubles as the image's base colour: the vignette fades the edge
 towards it rather than towards black, so it works the same way on a light look
 and a dark one.

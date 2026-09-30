@@ -1912,3 +1912,87 @@ matters, the `docs/decisions.md` entry says so.
 - The exported `.webm`'s name appears in the Timelapse status line, and the
   section has no paragraph before the first export.
 - The other tabs' hints are unchanged.
+
+---
+
+## T30 — The colour ramp as a gradient strip with draggable stops
+
+- **Kind:** feature
+- **Roadmap:** Phase 4 addendum
+- **Touches:** `scripts/Panel.js`, `styles.css`
+- **Status:** done — see "The colour ramp is edited on a strip" in `docs/decisions.md`. The premise that the CSS fill is exact held to within one 8-bit level, measured, not bit-exact.
+- **Blocked by:** —
+
+**Prompt**
+
+> Replace the Colours section's list of rows with a **horizontal strip showing
+> the ramp itself, and a dot per stop that is dragged along it.** Grading is the
+> thing done most on this tab, and a column of numbers is the wrong instrument
+> for it: the ramp is a picture, so the control should be one.
+>
+> **The data does not change.** `params.gradient` stays an array of
+> `{at, color}`, sorted, with the same meaning. This is a new editor for an
+> existing model — do not touch `Gradient`, `Preset`'s array handling, or the
+> base-colour read in `main.js`. An array in `Params` has its own branch in all
+> three of `Preset.capture`, `strip` and `apply`; leave them alone.
+>
+> **The strip's fill is a CSS `linear-gradient` built from the stops, and it is
+> exact rather than approximate** — worth knowing so nobody replaces it with a
+> canvas later. `Gradient.sample` interpolates between 8-bit sRGB values
+> linearly, and CSS `linear-gradient` interpolates in the same space by default,
+> so the same stop positions and hex colours give the same colours. The flat
+> holds outside the first and last stop match too. Verify it once by eye against
+> a rendered image and say so in the entry.
+>
+> **The layout:**
+>
+> - The strip, with the gradient as its background and a dot per stop sitting on
+>   it at `at × 100%`. The selected dot is marked (ring, or larger).
+> - **Under it, one row for the selected stop only**: a colour input, its `at`
+>   as a number for exact entry, and a remove button. Not a row per stop — the
+>   strip is the list now. Removal keeps the existing floor: **two stops is a
+>   ramp, one is a flat fill**, so the button is disabled at two.
+> - **Double-clicking the strip adds a stop there**, in the colour the ramp
+>   already has at that position — so adding one changes nothing until it is
+>   moved, which is the property the current **Add stop** button has and must
+>   keep. That button stays, with its existing widest-gap behaviour, because it
+>   is the discoverable route and a double-click is not.
+>
+> **The trap, and it is the whole risk of this task: the stops are sorted, so
+> dragging one past its neighbour changes its index under the cursor.** Anything
+> holding an index — the drag, the selection, the fields below — silently
+> switches to the neighbour mid-gesture. **Hold the stop object, not its index**,
+> and re-find the index after each sort when one is needed. This is the same
+> class of bug as retiming a station, which is why a station's `t` is applied on
+> `change`; here the drag has to stay live, so identity is the answer instead of
+> deferral.
+>
+> Two smaller ones:
+>
+> - **Capture the drag on the window, not on the dot.** The strip is a few
+>   pixels tall and the cursor leaves it immediately. The mini bar on the
+>   Playback tab does this already — same shape, and the same
+>   `removeEventListener` care about holding the listener references.
+> - **Every edit still goes through `touched()`**, or the image does not repaint
+>   and the URL stops following the state. A drag fires continuously; that is
+>   fine, the hash write is debounced by design.
+>
+> **What not to do:** do not add colour-space interpolation, easing between
+> stops, a colour picker of your own, or presets of ramps. The section is being
+> given a better instrument for the same model, nothing more.
+
+**Done when**
+
+- The Colours section shows the ramp as a strip, with one dot per stop.
+- Dragging a dot moves that stop, and dragging one past another keeps moving
+  **the same stop** — its dot does not swap with its neighbour, and the fields
+  below keep describing the dot being dragged.
+- The strip's colours match the rendered image's ramp.
+- The selected stop's colour and position are editable below the strip, and the
+  position can be typed exactly.
+- Double-clicking the strip adds a stop that changes nothing until it is moved;
+  **Add stop** still works.
+- Removal is refused at two stops.
+- The image repaints and the URL follows, during a drag as well as after it.
+- `params.gradient` has the same shape as before, and a preset saved by the old
+  panel still loads.

@@ -380,9 +380,8 @@ export default class Panel {
 
         // Colours first: the ramp is the first thing reached for when grading.
         const ramp = this.section(body, "Colours")
-        this.help(ramp.firstChild, "Position 0 is empty canvas, 1 is the densest pixel.")
-        this.stopList = el("div", "stop-list")
-        ramp.appendChild(this.stopList)
+        this.help(ramp.firstChild, "Position 0 is empty canvas, 1 is the densest pixel. Drag a dot to move its stop; double-click the strip to add one.")
+        this.buildRampEditor(ramp)
         const addStop = el("button", "wide", "Add stop")
         addStop.addEventListener("click", () => this.addGradientStop())
         ramp.appendChild(addStop)
@@ -1362,61 +1361,150 @@ export default class Panel {
         if (this.trackSelect) this.syncTracks()
     }
 
-    // The colour ramp's stops, rebuilt rather than patched — the focal-point
-    // rows above work the same way, and neither is on a per-frame path.
+    // The ramp as a picture: a strip filled with the gradient, a dot per stop
+    // dragged along it, and the fields of the selected stop underneath. The
+    // selection and the drag hold the stop object, never its index — the list
+    // is re-sorted as a dot passes its neighbour, and an index would hand the
+    // gesture to the neighbour. See T30 in docs/decisions.md.
+    buildRampEditor(parent) {
+        const frame = el("div", "ramp")
+        this.rampStrip = el("div", "ramp-strip")
+        this.rampStrip.addEventListener("dblclick", (event) => {
+            if (event.target !== this.rampStrip) return
+            this.insertGradientStop(this.rampPosition(event))
+        })
+        frame.appendChild(this.rampStrip)
+        parent.appendChild(frame)
+
+        const row = el("div", "stop-row")
+        this.stopColour = el("input")
+        this.stopColour.type = "color"
+        this.stopColour.addEventListener("input", () => {
+            if (!this.selectedStop) return
+            this.selectedStop.color = this.stopColour.value
+            this.refreshRamp()
+            this.touched()
+        })
+
+        this.stopAt = el("input")
+        this.stopAt.type = "number"
+        this.stopAt.min = 0
+        this.stopAt.max = 1
+        this.stopAt.step = .01
+        // Live, and safe to be: the stop is held by identity, so a value
+        // passing a neighbour while it is typed moves this stop and no other.
+        this.stopAt.addEventListener("input", () => {
+            const value = Number(this.stopAt.value)
+            if (!this.selectedStop || this.stopAt.value === "" || Number.isNaN(value)) return
+            this.moveGradientStop(this.selectedStop, value)
+        })
+
+        this.stopRemove = el("button", "remove", "×")
+        this.stopRemove.title = "Remove this stop"
+        this.stopRemove.addEventListener("click", () => this.removeGradientStop())
+
+        row.append(this.stopColour, this.stopAt, this.stopRemove)
+        parent.appendChild(row)
+    }
+
+    // 0…1 across the strip, from a mouse event anywhere on the page.
+    rampPosition(event) {
+        const rect = this.rampStrip.getBoundingClientRect()
+        if (!rect.width) return 0
+        const at = (event.clientX - rect.left)/rect.width
+        return Math.round(Math.min(1, Math.max(0, at))*100)/100
+    }
+
+    // The dots, rebuilt: the stop list changes on an edit, not per frame. A
+    // selection that is gone (a preset replaced the array) falls back to the
+    // first stop, so the fields below always describe something.
     syncGradientStops() {
         const stops = this.params.gradient
-        this.stopList.textContent = ""
+        if (!stops.includes(this.selectedStop)) this.selectedStop = stops[0] || null
 
-        stops.forEach((stop, index) => {
-            const row = el("div", "stop-row")
-
-            const at = el("input")
-            at.type = "number"
-            at.min = 0
-            at.max = 1
-            at.step = .05
-            at.value = stop.at
-            at.addEventListener("input", () => {
-                const value = Number(at.value)
-                if (Number.isNaN(value)) return
-                stop.at = Math.min(1, Math.max(0, value))
-                this.touched()
+        this.rampStrip.textContent = ""
+        this.rampDots = new Map()
+        for (const stop of stops) {
+            const dot = el("span", "ramp-dot")
+            dot.title = "Drag to move this stop"
+            dot.addEventListener("mousedown", (event) => {
+                event.preventDefault()
+                this.selectGradientStop(stop)
+                // Captured on the window, like the mini bar's drag: the strip is
+                // a few pixels tall and the cursor leaves it at once. The same
+                // references go to removeEventListener — see AGENTS.md.
+                const drag = (moved) => this.moveGradientStop(stop, this.rampPosition(moved))
+                const drop = () => {
+                    window.removeEventListener("mousemove", drag)
+                    window.removeEventListener("mouseup", drop)
+                }
+                window.addEventListener("mousemove", drag)
+                window.addEventListener("mouseup", drop)
             })
-            // Reordering while a digit is being typed would pull the row out
-            // from under the cursor, so it waits for the field to be committed.
-            at.addEventListener("change", () => this.sortGradientStops())
-
-            const colour = el("input")
-            colour.type = "color"
-            colour.value = stop.color
-            colour.addEventListener("input", () => {
-                stop.color = colour.value
-                this.touched()
-            })
-
-            const remove = el("button", "remove", "×")
-            remove.title = "Remove this stop"
-            // Two is a ramp; one is a flat fill and zero is nothing to sample.
-            remove.disabled = stops.length <= 2
-            remove.addEventListener("click", () => {
-                stops.splice(index, 1)
-                this.touched()
-                this.syncGradientStops()
-            })
-
-            row.append(at, colour, remove)
-            this.stopList.appendChild(row)
-        })
+            this.rampStrip.appendChild(dot)
+            this.rampDots.set(stop, dot)
+        }
+        this.refreshRamp()
     }
 
-    sortGradientStops() {
+    // Everything but the dots' existence: the fill, where each dot sits, which
+    // one is selected, and the selected stop's fields — which one being typed
+    // into is left alone.
+    refreshRamp() {
+        const stops = this.params.gradient
+        // Built from what the tone map samples — filtered, clamped, sorted — and
+        // exact: CSS interpolates hex stops in sRGB, as Gradient.sample does.
+        const ramp = Gradient.from(stops).stops
+        const parts = ramp.map(stop => `${stop.color} ${stop.at*100}%`)
+        if (parts.length === 1) parts.push(parts[0])
+        this.rampStrip.style.background = parts.length
+            ? `linear-gradient(to right, ${parts.join(", ")})`
+            : "#000000"
+
+        for (const [stop, dot] of this.rampDots) {
+            dot.style.left = `${Math.min(1, Math.max(0, stop.at))*100}%`
+            dot.style.background = stop.color
+            dot.classList.toggle("selected", stop === this.selectedStop)
+        }
+
+        const stop = this.selectedStop
+        this.stopColour.disabled = this.stopAt.disabled = !stop
+        if (stop) {
+            if (this.stopColour.value !== stop.color) this.stopColour.value = stop.color
+            if (document.activeElement !== this.stopAt && Number(this.stopAt.value) !== stop.at) {
+                this.stopAt.value = String(stop.at)
+            }
+        }
+        // Two is a ramp; one is a flat fill and zero is nothing to sample.
+        this.stopRemove.disabled = !stop || stops.length <= 2
+    }
+
+    selectGradientStop(stop) {
+        this.selectedStop = stop
+        this.refreshRamp()
+    }
+
+    // Moves one stop, found by identity, and keeps the list sorted as it goes.
+    moveGradientStop(stop, at) {
+        stop.at = Math.min(1, Math.max(0, at))
         this.params.gradient.sort((a, b) => a.at - b.at)
-        this.syncGradientStops()
+        this.refreshRamp()
+        this.touched()
     }
 
-    // A new stop lands in the widest gap, in the colour the ramp already has
-    // there — so adding one changes nothing until it is moved.
+    // A new stop in the colour the ramp already has there — so adding one
+    // changes nothing until it is moved.
+    insertGradientStop(at) {
+        const stops = this.params.gradient
+        const stop = { at, color: Gradient.hex(Gradient.from(stops).sample(at)) }
+        stops.push(stop)
+        stops.sort((a, b) => a.at - b.at)
+        this.selectedStop = stop
+        this.syncGradientStops()
+        this.touched()
+    }
+
+    // The button's route: the middle of the widest gap.
     addGradientStop() {
         const stops = this.params.gradient
         let at = .5,
@@ -1428,10 +1516,17 @@ export default class Panel {
                 at = (stops[i].at + stops[i - 1].at)/2
             }
         }
+        this.insertGradientStop(at)
+    }
 
-        stops.push({ at, color: Gradient.hex(Gradient.from(stops).sample(at)) })
+    removeGradientStop() {
+        const stops = this.params.gradient,
+            index = stops.indexOf(this.selectedStop)
+        if (index < 0 || stops.length <= 2) return
+        stops.splice(index, 1)
+        this.selectedStop = stops[Math.min(index, stops.length - 1)]
+        this.syncGradientStops()
         this.touched()
-        this.sortGradientStops()
     }
 
     // The shared weight, the per-row w fields and the stations' w fields are

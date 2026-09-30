@@ -26,6 +26,54 @@ Paragraphs, tables, lists.
 
 ---
 
+# The colour ramp is edited on a strip
+
+Date: 2026-09-30
+
+Task: T30.
+
+The Colours section's column of number rows became a strip filled with the ramp
+and a dot per stop, dragged along it; under the strip, one row for the
+**selected** stop — colour, position, remove. Double-clicking the strip adds a
+stop there in the colour the ramp already has, and **Add stop** keeps its
+widest-gap route. The model is untouched: `params.gradient` is the same array
+of `{at, color}`, and `Gradient`, `Preset` and `main.js` did not change.
+
+**The selection and the drag hold the stop object, never its index.** The list
+is re-sorted on every move, so a dot passing its neighbour changes index under
+the cursor; an index would hand the rest of the gesture — and the fields below —
+to the neighbour. Identity also made the typed position safe to apply live
+(the old row waited for `change`, because re-sorting rebuilt the row under the
+cursor): the fields are refreshed in place, and the one being typed into is not
+written back. A selection that disappears — a preset replaces the array — falls
+back to the first stop.
+
+A drag position is rounded to 0.01, the number field's step: a pixel of the
+strip is about 0.004, so finer is not aimable, and it keeps the URL short.
+
+**The fill is a CSS `linear-gradient`, and it matches the tone map's ramp to
+within one 8-bit level — not bit-exact.** It is built from `Gradient.from(stops)
+.stops`, the filtered, clamped, sorted list the tone map samples, so an invalid
+or out-of-range stop is drawn the way it renders. Measured by screenshotting
+five ramps (including flat holds outside the end stops and two stops at the
+same position) in headless Chrome 1000 px wide and comparing each pixel with
+`Gradient.sample` at its centre: the largest channel difference is 1 on every
+ramp, on 13-31% of pixels, and the holds and the hard edge match exactly. The
+residue is rounding. It is not a reason to draw the strip on a canvas. CSS needs
+two colour stops, so a one-stop ramp — a preset can carry one — is written
+twice.
+
+Verified with a fake DOM that dispatches events and drives the real `Panel`:
+dragging the first of four stops across a neighbour keeps the same stop object,
+dot element, selection and field values; `touched()` fires on every move; the
+window listeners are gone after `mouseup`; a double-click adds a stop that
+changes no sample of the ramp (1001 samples, largest difference 0) and a
+double-click on a dot adds nothing; removal stops at two; an empty position
+field does not move the stop to 0; an unsorted three-stop array replacing the
+one held is shown with a valid selection.
+
+---
+
 # Help icons, and the Playback and Look tabs lose their standing hints
 
 Date: 2026-09-30
