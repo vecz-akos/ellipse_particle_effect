@@ -1996,3 +1996,76 @@ matters, the `docs/decisions.md` entry says so.
 - The image repaints and the URL follows, during a drag as well as after it.
 - `params.gradient` has the same shape as before, and a preset saved by the old
   panel still loads.
+
+---
+
+## T32 — Draw the tone curve on the Look tab
+
+- **Kind:** feature
+- **Roadmap:** Phase 4 addendum
+- **Touches:** `scripts/Panel.js`, `styles.css`
+- **Status:** done — see "The tone curve is drawn over the ramp" in `docs/decisions.md`
+- **Blocked by:** —
+
+**Prompt**
+
+> The Tone map section is three numbers whose effect can only be judged on the
+> image. Draw the curve they make, above the sliders, the way T30 gave the ramp
+> a strip: a small plot of **density in, brightness out**, updating as the
+> sliders move.
+>
+> **What the curve is** — read `DensityBuffer.buildTable`, which is the
+> authority, not this paragraph. It maps a density `d` to a position `t` in the
+> ramp: `t = log1p(d · exposure) / log1p(whitePoint · exposure)`, clamped to 1,
+> then `t = t^(1/gamma)`. So the horizontal axis is density from 0 to the
+> current white point, and the vertical is `t` from 0 to 1 — which is the ramp's
+> own coordinate. **Plot it by calling the same code path**, or the plot and the
+> image will drift apart the first time either changes; if that means exposing a
+> small pure helper out of `buildTable`, do that rather than restating the
+> formula in the panel.
+>
+> **Paint the curve over the ramp**, sampled through `Gradient`: the plot's
+> vertical axis *is* ramp position, so the background of the plot can be the
+> ramp itself and the curve reads as "this density comes out this colour". That
+> is the whole value of drawing it — not the shape of a log curve, which nobody
+> needs, but which part of the ramp the image's densities actually reach.
+>
+> **A canvas, not SVG or CSS** — it is a few dozen line segments redrawn on a
+> slider drag, the panel already has canvas-drawing code to follow, and a
+> gradient background under a curve is one `createLinearGradient`. Size it to
+> the panel's width and keep it short; this is a readout, not a figure.
+>
+> **Adaptation is the one that cannot be drawn as a curve, and the plot is where
+> that becomes obvious.** It does not change the shape — it changes how fast
+> `whitePoint` chases the image's peak, which is the *horizontal axis itself*.
+> So show the white point as a number or a tick on the axis and let the axis
+> move; do not try to draw adaptation as a line. Note in the entry that this is
+> why adaptation stays a slider with a hint and gets no curve of its own.
+>
+> **Two things to get right or the plot lies:**
+>
+> - **A held exposure snaps the white point instead of easing it** (`adaptation`
+>   is forced to 1 when not exposing — see the entry in `docs/decisions.md`). The
+>   plot has to read the same white point `render` used, not recompute one.
+> - **The plot has to be redrawn when the image changes, not only when a slider
+>   moves.** The white point rises as the exposure runs, so the curve moves on
+>   its own. Redraw it from wherever the panel already refreshes per frame,
+>   through the changed-value guard the other per-frame writes use — an
+>   unconditional canvas clear and redraw sixty times a second, on a panel that
+>   is mostly idle, is exactly what `AGENTS.md` warns about.
+>
+> **Not in this task:** dragging the curve to edit it, a histogram of the
+> density behind it, control points, or curve presets. A histogram is a
+> reasonable next step and a separate decision — it needs a pass over the
+> density buffer, which is a real cost, while this plot costs nothing.
+
+**Done when**
+
+- The Tone map section shows a curve of density against ramp position, over the
+  ramp's own colours.
+- Moving exposure or gamma changes the curve immediately, and the curve matches
+  what the image does.
+- The white point is visible as a number or a tick, and it moves as a live
+  exposure brightens.
+- The plot is not redrawn on frames where nothing about it changed.
+- The formula exists in one place: the plot and `buildTable` cannot disagree.

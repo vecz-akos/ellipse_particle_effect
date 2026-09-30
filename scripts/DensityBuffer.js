@@ -92,17 +92,27 @@ export default class DensityBuffer {
     buildTable(top, exposure, gamma, gradient) {
         if (!this.table || this.table.length <= top) this.table = new Uint32Array(top + 1)
 
-        const scale = this.whitePoint > 0 ? 1/Math.log1p(this.whitePoint*exposure) : 0,
-            invGamma = 1/gamma,
+        const tone = DensityBuffer.toneCurve(this.whitePoint, exposure, gamma),
             colour = this.colour
 
         for (let d = 0; d <= top; d++) {
-            let t = d > 0 ? Math.log1p(d*exposure)*scale : 0
-            if (t > 1) t = 1
-            if (t > 0) t = Math.pow(t, invGamma)
-            gradient.sample(t, colour)
+            gradient.sample(tone(d), colour)
             this.table[d] = pack(colour[0], colour[1], colour[2])
         }
         return this.table
+    }
+
+    // The tone curve, density to ramp position 0…1: log density normalised to
+    // the white point, then gamma. The one copy of the formula — the table and
+    // the panel's plot both call it, so they cannot disagree.
+    static toneCurve(whitePoint, exposure, gamma) {
+        const scale = whitePoint > 0 ? 1/Math.log1p(whitePoint*exposure) : 0,
+            invGamma = 1/gamma
+        return (d) => {
+            let t = d > 0 ? Math.log1p(d*exposure)*scale : 0
+            if (t > 1) t = 1
+            if (t > 0) t = Math.pow(t, invGamma)
+            return t
+        }
     }
 }

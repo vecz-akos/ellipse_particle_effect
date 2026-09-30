@@ -34,7 +34,9 @@ scaled to fit it whole.
 - **Look** — everything between the density buffer and the pixels: the colour
   ramp first, since that is where grading starts, then bloom, the tone map
   (exposure, gamma, and adaptation — not a look control but how fast the white
-  point follows the brightest spot while the exposure runs), a vignette and
+  point follows the brightest spot while the exposure runs; a small plot above
+  the sliders draws the curve over the ramp, density from 0 to the white point
+  across, so you can see which part of the ramp the image reaches), a vignette and
   film grain. Bloom, vignette and
   grain are off until you turn them on, and cost nothing while they are. None of
   it touches the simulation, so the usual way to work is to let an image build up

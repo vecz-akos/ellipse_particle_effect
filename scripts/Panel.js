@@ -1,5 +1,6 @@
 import Params from "./Params.js"
 import Gradient from "./Gradient.js"
+import DensityBuffer from "./DensityBuffer.js"
 import Animation, { KINDS, modulator } from "./Animation.js"
 
 // The modulator fields, as the panel labels them. Waves are full cycles per
@@ -91,6 +92,8 @@ export default class Panel {
             this.tabButtons[tab.id].classList.toggle("active", tab.id === id)
             this.tabBodies[tab.id].hidden = tab.id !== id
         }
+        // A hidden canvas has no width to draw at, so the plot waits for this.
+        if (id === "look" && this.tonePlot) this.refreshToneCurve()
     }
 
     // Every control reports that the state moved, so the URL can follow it.
@@ -414,6 +417,15 @@ export default class Panel {
 
         const tone = this.section(body, "Tone map")
         this.help(tone.firstChild, "The look is applied to whatever the image already holds — grade it with the exposure paused. Adaptation only matters while the exposure runs: lower, and a fresh bright area burns out for longer before the picture darkens around it.")
+        // Density across, ramp position up, over the ramp itself. Adaptation has
+        // no curve of its own: it moves the white point, which is the axis.
+        this.tonePlot = el("canvas", "tone-plot")
+        this.tonePlot.title = "Density from 0 to the white point, against where in the ramp it lands"
+        tone.appendChild(this.tonePlot)
+        this.toneReadout = el("p", "readout", "")
+        tone.appendChild(this.toneReadout)
+        this.toneKey = ""
+        this.toneWhitePoint = 0
         this.slider(tone, "Exposure", {
             read: () => params.exposure,
             write: (v) => params.exposure = v,
@@ -1359,6 +1371,58 @@ export default class Panel {
         // The track selector lists the points, so it is rebuilt with them.
         // Guarded: the focal rows are built before the Playback tab exists.
         if (this.trackSelect) this.syncTracks()
+    }
+
+    // The tone curve over the ramp, called from render with the white point it
+    // used. Per-frame while an exposure runs, so it redraws only when the key
+    // changes; four significant digits of the white point is well under a
+    // pixel of the plot.
+    refreshToneCurve(whitePoint=this.toneWhitePoint) {
+        this.toneWhitePoint = whitePoint
+        setText(this.toneReadout, `White point ${Math.round(whitePoint)} hits`)
+
+        const canvas = this.tonePlot,
+            width = canvas.clientWidth,
+            height = canvas.clientHeight
+        if (!width || !height) return
+        const { exposure, gamma, gradient: stops } = this.params,
+            ratio = window.devicePixelRatio || 1,
+            key = `${width}x${height}@${ratio}|${whitePoint.toPrecision(4)}|${exposure}|${gamma}|${Gradient.key(stops)}`
+        if (key === this.toneKey) return
+        this.toneKey = key
+
+        const w = Math.round(width*ratio), h = Math.round(height*ratio)
+        if (canvas.width !== w) canvas.width = w
+        if (canvas.height !== h) canvas.height = h
+        const ctx = canvas.getContext("2d")
+
+        // Ramp position runs up the plot, so the ramp is its background: the
+        // curve's height at a density is the colour that density comes out.
+        const ramp = Gradient.from(stops).stops
+        if (ramp.length) {
+            const fill = ctx.createLinearGradient(0, h, 0, 0)
+            for (const stop of ramp) fill.addColorStop(stop.at, stop.color)
+            ctx.fillStyle = fill
+        } else {
+            ctx.fillStyle = "#000000"
+        }
+        ctx.fillRect(0, 0, w, h)
+
+        const tone = DensityBuffer.toneCurve(whitePoint, exposure, gamma),
+            pad = 2*ratio
+        ctx.beginPath()
+        for (let x = 0; x <= w; x++) {
+            const y = pad + (1 - tone(x/w*whitePoint))*(h - 2*pad)
+            x ? ctx.lineTo(x, y) : ctx.moveTo(x, y)
+        }
+        // Dark under light, so the line reads on any part of any ramp.
+        ctx.lineJoin = "round"
+        ctx.strokeStyle = "rgba(0, 0, 0, .7)"
+        ctx.lineWidth = 3*ratio
+        ctx.stroke()
+        ctx.strokeStyle = "#ffffff"
+        ctx.lineWidth = 1.25*ratio
+        ctx.stroke()
     }
 
     // The ramp as a picture: a strip filled with the gradient, a dot per stop

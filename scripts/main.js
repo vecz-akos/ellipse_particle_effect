@@ -332,6 +332,9 @@ const render = () => {
         source: glow && glow.data,
         max: glow && glow.max
     })
+    // The white point this render used — not one recomputed — and only when
+    // something redrew, so the plot moves with the image and no more often.
+    if (panel) panel.refreshToneCurve(density.whitePoint)
     // In place, on the freshly rendered pixels — nothing else writes imageData,
     // so the effects cannot pile up on themselves.
     post.apply(imageData.data, width, height, {

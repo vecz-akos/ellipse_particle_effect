@@ -305,6 +305,16 @@ button.wide {
     gap: .3rem;
 }
 
+/* A readout, not a figure: full width, short. */
+.tone-plot {
+    display: block;
+    width: 100%;
+    height: 56px;
+    margin: .2rem 0 0;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+}
+
 /* The ramp itself. The side margin is half a dot, so a stop at 0 or 1 still
    sits wholly inside the panel. */
 .ramp {

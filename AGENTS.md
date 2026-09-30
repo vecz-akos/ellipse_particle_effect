@@ -182,6 +182,8 @@ Rules for all of it:
   indexed by density and built once per frame, so the ramp is sampled a few
   thousand times rather than a few million. Bloom makes the index a float and is
   answered with a truncation (`source[i]|0`), not with per-pixel `log1p`/`pow`.
+  The curve itself is `DensityBuffer.toneCurve`, which the Look tab's plot calls
+  too — change the tone map there, never by restating the formula elsewhere.
 - **`render`'s white point follows what `render` is reading.** With bloom on that
   is the summed buffer, whose maximum `Bloom.apply` returns; normalising to the
   raw density's maximum instead clips the bright core to a flat blob. If you add

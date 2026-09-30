@@ -72,8 +72,10 @@ reallocates while copying the overlapping region so the accumulated image
 survives a window resize. `render` maps density to colour into an `ImageData` —
 `log1p(density * exposure)` normalised to a white point that lags the running
 maximum (so the per-frame mode does not flicker), then a gamma curve, then a
-`Gradient` sample. The curve is evaluated in `buildTable`, once per density value
-rather than once per pixel, and the pixel loop only indexes that table. It knows
+`Gradient` sample. The curve itself is the static `DensityBuffer.toneCurve`,
+the one copy of the formula: `buildTable` evaluates it once per density value
+rather than once per pixel, the pixel loop only indexes that table, and the
+Look tab's tone plot draws the same function. It knows
 nothing about particles or the canvas; `main.js` does the `putImageData`.
 
 ### `scripts/Gradient.js`

@@ -605,6 +605,42 @@ on-screen image pixel for pixel, and neither needs to: this renders the same
 
 ---
 
+## Phase 7 — Keeping things: saved looks and a collection of images
+
+A sketch, not an application — so this phase is the one most likely to grow
+past what the project wants to be, and it is written short on purpose. The
+sections below are the *shape* of an intention, not a plan; each one gets
+thought through properly when it is picked up.
+
+**Why it exists.** Everything reproducible is already reproducible: the URL
+hash carries the whole state and a preset file carries it more durably. What is
+missing is somewhere to *keep* things. A good ramp has to be rebuilt stop by
+stop on the next image, and a good image survives only as a link in whatever
+window it was made in.
+
+**Saved looks.** A named grading — the ramp, and probably the tone map, bloom,
+vignette and grain with it — that can be applied to any image. This is a
+smaller idea than it sounds, because the Look tab is already the whole set of
+things that do not touch the simulation: a look is that subset of `Params`,
+under a name. Two questions it has to answer first: whether a look includes
+the tone map (the ramp is resolution-independent, but `exposure` interacts with
+how bright the run is) and whether a handful of **built-in** ramps ship with it,
+which would be the first content the project has ever had rather than only
+mechanism.
+
+**A collection of images.** Somewhere to put the links, with a thumbnail and
+the seed. The cheap version is `localStorage` and a list; the honest question is
+whether that is still a sketch. It stores no state a link does not already hold,
+so nothing is lost if it is cleared — which is the argument for keeping it
+deliberately lightweight rather than making it the app's centre.
+
+**The risk, named up front.** Both of these are library management, and library
+management is where a drawing tool turns into a file browser. If either starts
+needing folders, tags, renaming or sorting, that is the signal it has outgrown
+this project rather than a feature list to work through.
+
+---
+
 ## Not planned
 
 - **A real simulated-annealing implementation.** The name is historical; a

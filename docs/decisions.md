@@ -26,6 +26,55 @@ Paragraphs, tables, lists.
 
 ---
 
+# The tone curve is drawn over the ramp
+
+Date: 2026-09-30
+
+Task: T32.
+
+The Tone map section has a plot above its sliders: density from 0 to the white
+point across, ramp position 0…1 up, with the ramp itself as the background, so
+the curve's height at a density *is* the colour that density comes out. A
+readout under it gives the white point in hits.
+
+**The formula lives in one place, `DensityBuffer.toneCurve(whitePoint,
+exposure, gamma)`**, a pure function returning `d → t`. `buildTable` calls it
+per entry and the panel's plot calls it per column, so the two cannot disagree.
+Extracting it changed nothing: 369 480 table entries over three ramps and a grid
+of white points, exposures and gammas, and four full renders of a random
+640×360 density, are byte-identical to HEAD. The closure call costs
+`buildTable` 4-5% — interleaved in one process, 60 rounds, 0.148 → 0.154 ms at
+`top` 2 000 and 1.372 → 1.440 ms at `top` 20 000 — which is 0.07 ms at worst
+next to a 10 ms `DensityBuffer.render`; not worth a second copy of the formula.
+The full `npm run bench` after the change, for the record: `DensityBuffer.render`
+9.5-10.5 ms at 1080p and 38 ms at 4K, all effects on 71-79 ms and 265-269 ms.
+
+**The white point is the one `render` used.** `main.js` hands
+`density.whitePoint` to `Panel.refreshToneCurve` right after `density.render`,
+so a held exposure's snapped white point is what the plot shows — nothing is
+recomputed. And it is called from `render`, which runs only when `needsRender`
+is raised, so the plot updates when the image does and never otherwise.
+
+**The redraw is guarded by a key** — the canvas size and pixel ratio, the white
+point to four significant digits, exposure, gamma and the ramp's `Gradient.key`.
+While an exposure runs the white point eases every frame; below the fourth digit
+the curve moves by well under a pixel, so a converged run stops redrawing.
+A hidden tab has no width to draw at, so the plot waits and `showTab` draws it.
+Verified on a fake DOM driving the real `Panel`: no draw while hidden, one on
+showing the tab, none over 100 unchanged renders or a white point drifting
+below the fourth digit, one each for a white point, exposure, gamma, ramp or
+width change; the plotted heights equal `toneCurve` to 1e-16.
+
+**Adaptation gets no curve, deliberately.** It does not change the curve's
+shape — it sets how fast the white point chases the image's peak, and the white
+point is the plot's horizontal axis. So it is visible as the axis moving (the
+readout), and stays a slider with a hint.
+
+The task said the panel already had canvas-drawing code to follow; it had none —
+this is `Panel`'s first canvas.
+
+---
+
 # The colour ramp is edited on a strip
 
 Date: 2026-09-30
